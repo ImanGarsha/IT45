@@ -54,8 +54,11 @@ class Unavailable:
 
 
 class Engine:
-    def __init__(self, feed, settings, store):
+    def __init__(self, feed, settings, store, hub=None):
         self.feed, self.settings, self.store = feed, settings, store
+        self.hub = hub
+        if hub is not None:
+            hub.listeners.append(self._on_trade)
         self.db = TradeDB(store)
         self.guard = Guard(self.db, self.cfg)
         self.executor = Executor(self)
@@ -113,7 +116,7 @@ class Engine:
                 self.db.audit("broker_error", venue, "", False, str(ex))
                 self.brokers[venue] = Unavailable(venue, mode, str(ex))
                 return
-        self.brokers[venue] = PaperBroker(venue, self.feed, self.db, self.cfg)
+        self.brokers[venue] = PaperBroker(venue, self.feed, self.db, self.cfg, hub=self.hub)
 
     def _has_exposure_sync(self, venue: str) -> bool:
         if any(venue in (p["long_venue"], p["short_venue"]) for p in self.db.open_pairs()):
@@ -134,6 +137,8 @@ class Engine:
                 br.tick(dt)
             except Exception as ex:
                 self.db.audit("tick_error", v, "", False, repr(ex))
+        if self.hub is not None:
+            self._spawn(self.hub.want(self.wanted_streams()))
         self._spawn(self.risk.run())
         for s in self.strategies.values():
             self._spawn(s.evaluate())
@@ -142,6 +147,33 @@ class Engine:
         t = asyncio.create_task(coro)
         self._tasks.add(t)
         t.add_done_callback(self._tasks.discard)
+
+    # ------------------------------------------------------------------ streams
+    def _on_trade(self, t):
+        br = self.brokers.get(t.venue)
+        if isinstance(br, PaperBroker):
+            br.on_trade(t)
+
+    def wanted_streams(self, top_n: int = 4) -> dict[str, set[str]]:
+        """Live books for: legs of open pairs, resting paper orders, and both legs of the top
+        candidates of every running strategy (so entries are priced off live books)."""
+        want: dict[str, set[str]] = {}
+
+        def add(v, s, k="perp"):
+            if k == "perp" and self.cfg()["venue_modes"].get(v, "off") != "off":
+                want.setdefault(v, set()).add(s)
+        for p in self.db.open_pairs():
+            add(p["long_venue"], p["symbol"], p["long_kind"])
+            add(p["short_venue"], p["symbol"])
+        for v, br in self.brokers.items():
+            for o in getattr(br, "resting", {}).values():
+                add(v, o.symbol, o.kind)
+        for name, s in self.strategies.items():
+            if self.cfg()["strategies"][name]["enabled"]:
+                for c in s.last_candidates[:top_n]:
+                    add(c["long_venue"], c["symbol"], c["long_leg"])
+                    add(c["short_venue"], c["symbol"])
+        return want
 
     # ------------------------------------------------------------------ helpers
     def api_error(self, venue, msg):

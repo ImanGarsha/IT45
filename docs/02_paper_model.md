@@ -24,7 +24,8 @@ mid ± 2 bp.
 | Post-only sell at P | Mirror image. |
 | IOC (taker) buy, limit L | Fills the full size at the ask if ask ≤ L, taker fee; otherwise nothing. |
 
-There is no order-book depth or queue model. That is acceptable only because caps keep
+With live streams on (docs/04) resting post-only orders follow a queue model on trade prints;
+without them, the rule above applies. There is no depth model for taker orders. That is acceptable only because caps keep
 orders far below each venue's volume; it flatters large orders. With quotes refreshed every
 5 s, resting post-only orders fill less often than they would live (the market must move
 through the price between two polls), so paper maker fill rates are pessimistic and the

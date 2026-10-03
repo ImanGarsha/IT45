@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__, opportunities as opp
 from .feed import Feed
 from .store import Settings, Store
+from .streams import StreamHub
 from .trading import persistence as tpers
 from .trading.engine import ConfigError, Engine
 
@@ -41,13 +42,15 @@ def create_app(start_feed: bool = True) -> FastAPI:
     settings = Settings(DATA / "settings.json")
     store = Store(DATA / "it45.db")
     feed = Feed(settings, store)
-    engine = Engine(feed, settings, store)
+    hub = StreamHub(feed)
+    engine = Engine(feed, settings, store, hub)
 
     @asynccontextmanager
     async def lifespan(app):
         if start_feed:
             feed.start()
         yield
+        await hub.stop()
         await feed.stop()
 
     app = FastAPI(title="IT45", version=__version__, lifespan=lifespan)
@@ -65,6 +68,10 @@ def create_app(start_feed: bool = True) -> FastAPI:
         return {"version": __version__, "time": time.time(), "cycles": feed.cycles,
                 "mode": "M2: paper + Hyperliquid testnet", "venues_ok": sum(v["ok"] for v in vs),
                 "venues_enabled": sum(v["enabled"] for v in vs), **store.stats()}
+
+    @app.get("/api/streams")
+    def streams():
+        return hub.status()
 
     @app.get("/api/venues")
     def venues():

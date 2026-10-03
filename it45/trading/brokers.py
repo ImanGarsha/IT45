@@ -92,14 +92,16 @@ class _Resting:
     reduce_only: bool
     pair_id: str | None
     placed: float = field(default_factory=time.time)
+    queue_ahead: float = 0.0    # size resting at our price before us (live stream), base units
 
 
 class PaperBroker(Broker):
     mode = "paper"
 
-    def __init__(self, venue: str, feed, db: TradeDB, cfg_getter, half_spread_bp: float = 2.0):
+    def __init__(self, venue: str, feed, db: TradeDB, cfg_getter, half_spread_bp: float = 2.0, hub=None):
         self.venue = venue
         self.feed = feed
+        self.hub = hub            # StreamHub: live top of book + trade prints (optional)
         self.db = db
         self.cfg = cfg_getter
         self.hs = half_spread_bp / 1e4
@@ -121,6 +123,9 @@ class PaperBroker(Broker):
         return None
 
     def _book(self, symbol: str, kind: str) -> Book | None:
+        top = self.hub.top(self.venue, symbol) if (self.hub and kind == "perp") else None
+        if top:
+            return Book(bid=top.bid, ask=top.ask, mid=(top.bid + top.ask) / 2, ts=top.ts)
         q = self._quote(symbol, kind)
         if not q or not q.px:
             return None
@@ -246,7 +251,16 @@ class PaperBroker(Broker):
         if post_only:
             if (side == "buy" and price >= b.ask) or (side == "sell" and price <= b.bid):
                 return reject("post-only would cross the book")
-            self.resting[oid] = _Resting(oid, symbol, kind, side, size, price, reduce_only, pair_id)
+            # queue position: joining an existing level puts us behind the size already there
+            queue = 0.0
+            top = self.hub.top(self.venue, symbol) if (self.hub and kind == "perp") else None
+            if top:
+                if side == "buy" and abs(price - top.bid) <= 1e-9 * price:
+                    queue = top.bid_sz
+                elif side == "sell" and abs(price - top.ask) <= 1e-9 * price:
+                    queue = top.ask_sz
+            self.resting[oid] = _Resting(oid, symbol, kind, side, size, price, reduce_only, pair_id,
+                                         queue_ahead=queue)
             self._record(oid, symbol, kind, side, size, price, True, reduce_only, pair_id, "open")
             return Ack(oid, "open")
         # IOC taker
@@ -306,25 +320,49 @@ class PaperBroker(Broker):
                 "start": c["start"], "margin_used": self._margin_used(),
                 "pnl": eq - c["start"], "resting_orders": len(self.resting)}
 
+    # ---------------------------------------------------------------- fills
+    def _fill_resting(self, oid: str, o: _Resting) -> None:
+        size = o.size
+        if o.reduce_only:
+            size = min(size, abs(self._pos_row(o.symbol, o.kind)["size"]))
+        self.resting.pop(oid, None)
+        if size <= 0:
+            self.db.update_order(oid, status="canceled", error="reduce-only: position already flat")
+            return
+        fee = self._apply_fill(o.symbol, o.kind, o.side, size, o.price, True, oid, o.pair_id)
+        self.db.update_order(oid, status="filled", filled=size, avg_px=o.price, fee=fee)
+
+    def on_trade(self, t) -> None:
+        """A public trade print on this venue (StreamHub listener).
+
+        A resting BUY at P is filled by taker SELLS: a sell printed below P went through us; a
+        sell printed AT P first consumes the queue that was there before we joined. Mirror for
+        sells. Unknown taker side counts for both (conservative only in queue terms)."""
+        if t.venue != self.venue:
+            return
+        for oid, o in list(self.resting.items()):
+            if o.symbol != t.symbol or o.kind != "perp" or t.ts < o.placed - 1:
+                continue
+            hits_us = (t.taker_buy is not True) if o.side == "buy" else (t.taker_buy is not False)
+            if not hits_us:
+                continue
+            if (o.side == "buy" and t.px < o.price) or (o.side == "sell" and t.px > o.price):
+                self._fill_resting(oid, o)
+            elif abs(t.px - o.price) <= 1e-9 * o.price:
+                o.queue_ahead -= t.sz
+                if o.queue_ahead < 0:
+                    self._fill_resting(oid, o)
+
     # ---------------------------------------------------------------- clock
     def tick(self, dt: float) -> None:
-        # 1) resting post-only orders: fill when the market trades through our price
+        # 1) resting post-only orders: fill when the book has moved through our price
         for oid, o in list(self.resting.items()):
             b = self._book(o.symbol, o.kind)
             if not b:
                 continue
             through = (o.side == "buy" and b.ask < o.price) or (o.side == "sell" and b.bid > o.price)
             if through:
-                size = o.size
-                if o.reduce_only:
-                    cur = self._pos_row(o.symbol, o.kind)["size"]
-                    size = min(size, abs(cur))
-                self.resting.pop(oid)
-                if size <= 0:
-                    self.db.update_order(oid, status="canceled", error="reduce-only: position already flat")
-                    continue
-                fee = self._apply_fill(o.symbol, o.kind, o.side, size, o.price, True, oid, o.pair_id)
-                self.db.update_order(oid, status="filled", filled=size, avg_px=o.price, fee=fee)
+                self._fill_resting(oid, o)
         # 2) funding on perps: longs pay positive rates, continuously
         if dt <= 0:
             return

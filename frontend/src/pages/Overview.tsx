@@ -52,10 +52,15 @@ export function Summary({ venues, health }: PageProps) {
   );
 }
 
+type StreamStatus = { venue: string; connected: boolean; wanted: string[]; fresh: string[]; messages: number;
+  last_msg_age_s: number | null; error: string | null };
+
 export function Health({ venues }: PageProps) {
+  const st = usePoll<StreamStatus[]>("/api/streams", 4000);
+  const byV = Object.fromEntries((st.data ?? []).map((s) => [s.venue, s]));
   return (
     <>
-      <PageHead title="Venue health" sub="Each venue is polled on its public API. A feed older than 30 s is marked stale and excluded from opportunities." />
+      <PageHead title="Venue health" sub="Each venue is polled on its public API every few seconds. Live websocket books open only for markets the bot is working on: open legs, resting orders and its top candidates." />
       <Table rows={venues} rowKey={(v) => v.name} cols={[
         { key: "label", label: "Venue", render: (v) => <span className="cell-flex"><Dot ok={v.ok} stale={v.stale} /><a href={`#/venues/${v.name}`}>{v.label}</a></span> },
         { key: "state", label: "State", get: (v) => (!v.enabled ? "disabled" : v.ok ? (v.stale ? "stale" : "live") : "down") },
@@ -64,7 +69,10 @@ export function Health({ venues }: PageProps) {
         { key: "latency_ms", label: "Latency", num: true, render: (v) => v.latency_ms == null ? "–" : `${v.latency_ms.toFixed(0)} ms` },
         { key: "age_s", label: "Last update", num: true, render: (v) => ago(v.age_s) },
         { key: "fails", label: "Failed polls in a row", num: true },
-        { key: "error", label: "Last error", render: (v) => <span className="err-text">{v.error ?? ""}</span> },
+        { key: "stream", label: "Live book", get: (v) => byV[v.name]?.fresh.length ?? 0,
+          render: (v) => { const s = byV[v.name]; if (!s || !s.wanted.length) return <span className="muted">idle</span>;
+            return <span className="cell-flex"><Dot ok={s.connected} stale={s.fresh.length < s.wanted.length} />{s.fresh.length}/{s.wanted.length} {s.wanted.join(", ")}</span>; } },
+        { key: "error", label: "Last error", render: (v) => <span className="err-text">{v.error ?? byV[v.name]?.error ?? ""}</span> },
       ]} />
     </>
   );

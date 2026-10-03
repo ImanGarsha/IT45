@@ -49,7 +49,8 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
   repair, guard, four brakes, kill switch. docs/02 (paper model), docs/03 (keys).
 - **M2.x (this build)**: real testnet connectors for **Bulk** (verified live end to end) and
   **Meridian** (signing verified live), setup scripts for both, `scripts/testnet_smoke.py`.
-- Next: Arcus and Reya connectors once a testnet is available; websocket books for real maker fills.
+- **Streams**: live websocket top of book + trade prints on all five venues for the markets in play; paper maker fills follow a queue model (docs/04).
+- Next: Arcus and Reya connectors once a testnet is available; M3 mainnet arming.
 - **M3**: mainnet arming per venue, Telegram / email / Windows alerts, VPS packaging (Docker).
 
 ## Layout
@@ -59,12 +60,13 @@ it45/            Python package (FastAPI backend)
   venues/        one adapter per venue -> normalised Quote (docs/01 has the units)
   opportunities.py  pure functions: cross-venue arb, spot carry, matrix
   trading/       engine, brokers (paper, hl/bulk/meridian testnet), guard, executor, strategies, risk
+  streams.py     live websocket books/trades (5 venues)
   feed.py        poller + venue health;  store.py  SQLite + settings
   api.py         /api/* JSON + serves the built dashboard from it45/web
   web/           built dashboard (committed, so Node is not needed to run)
 frontend/        React + Vite source of the dashboard
 tests/           pytest
-docs/            00 spec, 01 venue APIs, 02 paper model, 03 keys + testnet setup
+docs/            00 spec, 01 venue APIs, 02 paper model, 03 keys + testnet setup, 04 streams
 scripts/         testnet wallet/signer setup, testnet smoke test
 data/            it45.db, settings.json (created at runtime, git-ignored)
 ```
