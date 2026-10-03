@@ -1,6 +1,9 @@
 """Bulk TESTNET broker, signed with the official `bulk-keychain` library (Ed25519 over the
 canonical wincode message, testnet signature domain).
 
+Signing: it45/trading/bulk_sign.py (pure Python, byte-identical to the official bulk-keychain,
+which has no Windows wheel for Python 3.13).
+
 Keys come from .env, never from the dashboard:
     IT45_BULK_SIGNER_KEY   base58 secret key of the signing wallet (an agent wallet, or for testnet
                            a throwaway wallet that is itself the account)
@@ -43,8 +46,8 @@ class BulkTestnet(Broker):
             key = (env.get("IT45_BULK_SIGNER_KEY") or "").strip()
             if not key:
                 raise RuntimeError("Bulk testnet needs IT45_BULK_SIGNER_KEY in .env (see docs/03_keys.md)")
-            import bulk_keychain as bk
-            signer = bk.Signer(bk.Keypair.from_base58(key), "testnet")
+            from .bulk_sign import BulkSigner
+            signer = BulkSigner(key, "testnet")
         self.signer = signer
         self.acct_pk = account or (env.get("IT45_BULK_ACCOUNT") or "").strip() or signer.pubkey
         self.http = client or httpx.Client(timeout=15)
