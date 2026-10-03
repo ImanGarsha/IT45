@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Health, usePoll, VenueStatus, VENUE_ORDER } from "./api";
+import { HelpLayer, useHelpEnabled } from "./HelpLayer";
 import { Icon } from "./icons";
 import { DEFAULT_ROUTE, findRoute, NAV } from "./nav";
 import { Page } from "./pages";
@@ -39,6 +40,7 @@ export default function App() {
   const route = useHashRoute().split("?")[0];
   const found = findRoute(route);
   const [theme, toggleTheme] = useTheme();
+  const [help, setHelp] = useHelpEnabled();
   const [collapsed, setCollapsed] = useStored("it45-rail", false);
   const [open, setOpen] = useState<Record<string, boolean>>({ [route.split("/")[0]]: true });
   const venues = usePoll<VenueStatus[]>("/api/venues", 4000);
@@ -55,6 +57,7 @@ export default function App() {
 
   return (
     <div className={`shell ${collapsed ? "rail-collapsed" : ""}`}>
+      <HelpLayer enabled={help} />
       <nav className="rail" aria-label="Main menu">
         <div className="brand">
           <span className="brand-mark">IT45</span>
@@ -66,7 +69,7 @@ export default function App() {
             const isOpen = !collapsed && !!open[sec.id];
             return (
               <li key={sec.id} className={active ? "active" : ""}>
-                <button className="menu-sec" aria-expanded={isOpen} title={collapsed ? sec.label : undefined}
+                <button className="menu-sec" aria-expanded={isOpen} aria-label={sec.label}
                   onClick={() => collapsed ? (window.location.hash = `#/${sec.id}/${sec.items[0].id}`)
                     : setOpen({ ...open, [sec.id]: !open[sec.id] })}>
                   <Icon name={sec.icon} />
@@ -108,17 +111,19 @@ export default function App() {
             {found ? <>{found.sec.label}<span className="sep">/</span><b>{found.item.label}</b></> : "Not found"}
           </div>
           <div className="topbar-right">
-            <div className="venue-dots" title="Venue feeds">
+            <div className="venue-dots">
               {VENUE_ORDER.map((n) => byName[n] && (
-                <a key={n} href={`#/venues/${n}`} className="vd" title={`${byName[n].label}: ${byName[n].ok ? (byName[n].stale ? "stale" : "live") : byName[n].error ?? "down"}`}>
+                <a key={n} href={`#/venues/${n}`} className="vd" data-help={`${byName[n].label} market feed: ${byName[n].ok ? (byName[n].stale ? "stale" : "live") : byName[n].error ?? "down"}`}>
                   <Dot ok={byName[n].ok} stale={byName[n].stale} />{byName[n].label}
                 </a>
               ))}
               {venues.error && <span className="vd bad">server unreachable</span>}
             </div>
-            <a href="#/risk/kill" className={`mode-pill ${tc?.kill_switch ? "pill-kill" : ""}`} title="Trading mode; opens the kill switch">
+            <a href="#/risk/kill" className={`mode-pill ${tc?.kill_switch ? "pill-kill" : ""}`} data-help="Trading mode of the enabled venues and whether a strategy is running. Click to open the kill switch.">
               {pill}
             </a>
+            <button className={`icon-btn help-toggle ${help ? "on" : ""}`} onClick={() => setHelp(!help)}
+              aria-pressed={help} aria-label={help ? "Turn hover help off" : "Turn hover help on"}>?</button>
             <button className="icon-btn" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
               <Icon name={theme === "dark" ? "sun" : "moon"} />
             </button>

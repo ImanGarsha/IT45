@@ -216,3 +216,10 @@ input[type="number"] { width: 110px; text-align: right; font-family: var(--font-
 .kill h2 { margin: 0 0 4px; font-size: 18px; }
 .kill p { margin: 0; max-width: 60ch; }
 .kill-on { border-left-color: var(--neg); }
+
+/* ---------- hover help ---------- */
+.help-tip { position: fixed; z-index: 50; max-width: 320px; padding: 8px 11px; border-radius: var(--radius);
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-left: 3px solid var(--brass);
+  font-size: 12.5px; line-height: 1.45; box-shadow: 0 6px 18px rgb(0 0 0 / .28); pointer-events: none; }
+.help-toggle { width: 30px; height: 30px; justify-content: center; font-weight: 600; font-size: 14px; }
+.help-toggle.on { color: var(--brass); border-color: var(--brass); }

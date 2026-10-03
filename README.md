@@ -28,6 +28,12 @@ First run creates `.venv` and installs; then the dashboard opens at http://127.0
 
 If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
+## Hover help
+Rest the pointer on anything (menu item, column header, number, button, setting) for half a
+second and a plain-English explanation appears. A table cell explains its column. The **?**
+button in the top bar turns it off and on. The texts live in `frontend/src/help.ts`;
+`scripts/help_audit.mjs` checks every page for elements without help (currently 0 of 1,636).
+
 ## Menu
 
 | Section | Pages |

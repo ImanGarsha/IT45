@@ -100,7 +100,7 @@ export function Table<T>({ rows, cols, initialSort, rowKey, onRow, empty, maxRow
         <thead>
           <tr>
             {cols.map((c) => (
-              <th key={c.key} className={c.num ? "num" : ""} style={{ width: c.width }} title={c.title}
+              <th key={c.key} className={c.num ? "num" : ""} style={{ width: c.width }} data-help={c.title}
                 aria-sort={sort?.[0] === c.key ? (sort[1] === 1 ? "ascending" : "descending") : "none"}>
                 <button onClick={() => setSort(sort?.[0] === c.key ? [c.key, (-sort[1]) as 1 | -1] : [c.key, c.num ? -1 : 1])}>
                   {c.label}

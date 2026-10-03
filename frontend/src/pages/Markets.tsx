@@ -40,7 +40,7 @@ function History({ symbol }: { symbol: string }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>{symbol} funding history, annualised</h2>
+        <h2 data-help="Funding of this asset on each venue over time, annualised, from the stored snapshots. Hover the chart to read values at a moment.">{symbol} funding history, annualised</h2>
         <div className="seg" role="group" aria-label="History window">
           {[6, 24, 72, 168].map((x) => <button key={x} aria-pressed={hours === x} onClick={() => setHours(x)}>{x < 168 ? `${x}h` : "7d"}</button>)}
         </div>
@@ -76,7 +76,7 @@ export function FundingMatrix() {
             <tr>
               <th>Asset</th>
               {VENUE_ORDER.map((v) => <th key={v} className="num">{VENUE_LABEL[v]}</th>)}
-              <th className="num" title="Highest minus lowest venue rate">Widest spread</th>
+              <th className="num">Widest spread</th>
             </tr>
           </thead>
           <tbody>
@@ -87,7 +87,7 @@ export function FundingMatrix() {
                 {VENUE_ORDER.map((v) => {
                   const c = r.venues[v];
                   return <td key={v} className="num hc" style={heat(c?.funding_apr, median(r))}
-                    title={c ? `${c.raw_symbol}: ${pct(c.funding_apr, 2)} / yr, 24h vol ${usd(c.volume_24h_usd)}` : "not listed"}>
+                    data-help={c ? `${c.raw_symbol}: ${pct(c.funding_apr, 2)} / yr, 24h vol ${usd(c.volume_24h_usd)}` : "not listed"}>
                     {c ? pct(c.funding_apr, 1) : ""}</td>;
                 })}
                 <td className="num"><b>{pct(r.spread_apr, 1)}</b></td>

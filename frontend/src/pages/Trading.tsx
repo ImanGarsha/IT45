@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
+import { lookupHelp } from "../help";
 import { usePoll, VENUE_LABEL, VENUE_ORDER } from "../api";
 import { ago, bp, Dot, Notice, PageHead, pct, price, signCls, Stat, Table, usd } from "../ui";
 
@@ -83,7 +84,7 @@ function NumField({ label, value, scale = 1, step = 1, min, hint, onChange }:
 
 function Bool({ label, value, onChange, hint }: { label: string; value: boolean; onChange: (v: boolean) => void; hint?: string }) {
   return (
-    <label className="switch-row"><input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+    <label className="switch-row" data-help={lookupHelp(label)}><input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}{hint && <small className="muted"> {hint}</small>}</span></label>
   );
 }
@@ -149,7 +150,7 @@ export function StrategyPage({ name }: { name: "funding_arb" | "spot_carry" }) {
             { key: "pos", label: "Positive", num: true, get: (r) => r.persistence.frac_positive, render: (r) => pct(r.persistence.frac_positive, 0) },
             { key: "n", label: "Samples", num: true, get: (r) => r.persistence.n, render: (r) => r.persistence.n },
             { key: "breakeven_h", label: "Breakeven", num: true, render: (r) => r.breakeven_h == null ? "–" : `${r.breakeven_h.toFixed(1)} h` },
-            { key: "eligible", label: "Trades?", get: (r) => (r.eligible ? 1 : 0), render: (r) => r.eligible ? <b className="pos">yes</b> : <span className="muted" title={r.why_not}>{r.why_not}</span> },
+            { key: "eligible", label: "Trades?", get: (r) => (r.eligible ? 1 : 0), render: (r) => r.eligible ? <b className="pos">yes</b> : <span className="muted">{r.why_not}</span> },
           ]} />
       </section>
 
@@ -188,7 +189,7 @@ function PairsTable({ rows, onChange, closed }: { rows: Pair[]; onChange: () => 
           { key: "target_usd", label: "Size per leg", num: true, render: (r) => usd(r.target_usd) },
           { key: "entry_edge_apr", label: "Entry spread", num: true, render: (r) => pct(r.entry_edge_apr, 1) },
           { key: "opened_ts", label: closed ? "Opened" : "Held", num: true, render: (r) => closed ? new Date(r.opened_ts * 1000).toLocaleString() : ago(Date.now() / 1000 - r.opened_ts).replace(" ago", "") },
-          { key: "status", label: "Status", render: (r) => <span title={r.notes}>{r.status}</span> },
+          { key: "status", label: "Status", render: (r) => <span data-help={r.notes || undefined}>{r.status}</span> },
           ...(closed ? [{ key: "close_reason", label: "Why closed", render: (r: Pair) => <span className="wrap">{r.close_reason}</span> }]
             : [{ key: "act", label: "", render: (r: Pair) => r.status === "open" &&
               <button className="btn-small" disabled={a.busy} onClick={(e) => { e.stopPropagation(); a.run(`${r.symbol} pair closing.`, () => call("POST", `/api/trading/pairs/${r.id}/close`), onChange); }}>Close</button> }]),
@@ -279,7 +280,7 @@ function OrdersTable({ rows }: { rows: Order[] }) {
         { key: "filled", label: "Filled", num: true, render: (r) => r.filled ? r.filled.toPrecision(6) : "–" },
         { key: "avg_px", label: "Avg price", num: true, render: (r) => price(r.avg_px) },
         { key: "fee", label: "Fee", num: true, render: (r) => r.fee ? usd(r.fee) : "–" },
-        { key: "status", label: "Status", render: (r) => <span title={r.error ?? ""} className={r.status === "rejected" ? "neg" : ""}>{r.status}{r.error ? ": " + r.error : ""}</span> },
+        { key: "status", label: "Status", render: (r) => <span data-help={r.error ?? undefined} className={r.status === "rejected" ? "neg" : ""}>{r.status}{r.error ? ": " + r.error : ""}</span> },
       ]} />
   );
 }
@@ -336,7 +337,7 @@ export function LimitsPage() {
                   <div className="seg" role="group" aria-label={`${V(v)} mode`}>
                     {["off", "paper", "testnet"].map((m) => (
                       <button key={m} aria-pressed={t.data!.config.venue_modes[v] === m} disabled={a.busy || (m === "testnet" && !t.data!.testnet_capable.includes(v))}
-                        title={m === "testnet" && !t.data!.testnet_capable.includes(v) ? "No testnet connector for this venue yet" : undefined}
+                        data-help={m === "testnet" && !t.data!.testnet_capable.includes(v) ? "No testnet connector for this venue yet: paper only." : undefined}
                         onClick={() => modeChange(v, m)}>{m}</button>
                     ))}
                   </div>

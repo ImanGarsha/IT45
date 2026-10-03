@@ -20,10 +20,10 @@ export const oppCols: Col<Opp>[] = [
     title: "Short price minus long price. Positive = you sell the richer leg" },
   { key: "persist", label: "6 h mean", num: true, get: (o) => o.persistence?.mean_edge_apr ?? null,
     title: "Average funding spread over the last 6 hours from stored snapshots, and the share of minutes it was positive",
-    render: (o) => o.persistence && o.persistence.n ? <span title={`${o.persistence.n} samples, positive ${pct(o.persistence.frac_positive, 0)} of the time`}>{pct(o.persistence.mean_edge_apr, 1)} <span className="muted">{pct(o.persistence.frac_positive, 0)}</span></span> : <span className="muted">no history</span> },
+    render: (o) => o.persistence && o.persistence.n ? <span data-help={`${o.persistence.n} samples, positive ${pct(o.persistence.frac_positive, 0)} of the time`}>{pct(o.persistence.mean_edge_apr, 1)} <span className="muted">{pct(o.persistence.frac_positive, 0)}</span></span> : <span className="muted">no history</span> },
   { key: "min_volume_usd", label: "Thinner leg 24h vol", num: true, render: (o) => usd(o.min_volume_usd) },
   { key: "flags", label: "Check", get: (o) => o.flags.length, render: (o) => o.flags.length
-      ? <span className="flags" title={o.flags.join("\n")}>{o.flags.length} note{o.flags.length > 1 ? "s" : ""}</span> : "" },
+      ? <span className="flags" data-help={o.flags.join(". ")}>{o.flags.length} note{o.flags.length > 1 ? "s" : ""}</span> : "" },
 ];
 
 function Controls({ q, set }: { q: { h: number; m: string; v: number }; set: (x: { h: number; m: string; v: number }) => void }) {

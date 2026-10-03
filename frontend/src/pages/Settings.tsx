@@ -92,7 +92,7 @@ export function VenueSettings({ venues }: { venues: VenueStatus[] }) {
       {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
       <div className="form">
         {venues.map((v) => (
-          <label key={v.name} className="switch-row">
+          <label key={v.name} className="switch-row" data-help={`Ticked: IT45 polls ${v.label} and includes it in every matrix, opportunity and strategy. Unticked: ignored entirely.`}>
             <input type="checkbox" checked={s.enabled_venues.includes(v.name)} onChange={() => toggle(v.name)} />
             <span><b>{v.label}</b> <span className="muted">{v.url.replace("https://", "")}</span></span>
           </label>

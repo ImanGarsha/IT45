@@ -9,4 +9,7 @@
 - Opportunity numbers are "if today's rate held" screens, not forecasts. Before any strategy
   trades on them, measure spread persistence from `data/it45.db` snapshots.
 - After frontend edits run `npm run build` in `frontend/` — `it45/web` is committed.
+- Hover help is the in-app manual: every new visible label needs an entry in
+  `frontend/src/help.ts` (or a `data-help` attribute). `node scripts/help_audit.mjs` against a
+  running server must report 0 elements without help.
 - Never kill processes with a pattern that appears in the same shell command.
