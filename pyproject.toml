@@ -1,10 +1,10 @@
 [project]
 name = "it45"
-version = "0.2.0"
+version = "0.2.1"
 description = "IT45 -- multi-venue automated trader (Hyperliquid, Arcus, Bulk, Reya, Meridian)"
 requires-python = ">=3.10"
 dependencies = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "httpx>=0.27",
-                "hyperliquid-python-sdk>=0.24"]
+                "hyperliquid-python-sdk>=0.24", "bulk-keychain>=0.1.29", "eth-account>=0.10"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -24,3 +24,4 @@ it45 = ["web/*", "web/assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["network: hits a live testnet API (deselect with -m 'not network')"]

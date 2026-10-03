@@ -7,9 +7,9 @@ The lesson carried over from IT4-2: fees, not forecasts, were the binding constr
 trades spreads (funding differences between venues, Hyperliquid spot-perp carry) with
 maker-first execution, rather than directional predictions.
 
-**Current build: M2.** Live prices and funding from all five venues, and an automatic
+**Current build: M2.x.** Live prices and funding from all five venues, and an automatic
 trader for both strategies in **paper** mode on every venue (simulated fills on live prices)
-and **testnet** mode on Hyperliquid. Every order passes a fail-closed guard; four brakes and a
+and **testnet** mode on Hyperliquid, Bulk and Meridian. Every order passes a fail-closed guard; four brakes and a
 kill switch run independently of the strategies. No mainnet yet (M3).
 
 Strategies ship **stopped**. Start them under Strategies once a few hours of funding history
@@ -44,10 +44,12 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
 
 ## Milestones
 - **M1**: read-only dashboard, all five venues, opportunity screen, SQLite history.
-- **M2 (this build)**: paper trading on all venues, Hyperliquid testnet connector (agent key in
+- **M2**: paper trading on all venues, Hyperliquid testnet connector (agent key in
   `.env`), both strategies with persistence-gated entry, maker-first executor with lone-leg
   repair, guard, four brakes, kill switch. docs/02 (paper model), docs/03 (keys).
-- **M2.x**: real connectors for Bulk and Meridian (both have testnets), then Arcus and Reya.
+- **M2.x (this build)**: real testnet connectors for **Bulk** (verified live end to end) and
+  **Meridian** (signing verified live), setup scripts for both, `scripts/testnet_smoke.py`.
+- Next: Arcus and Reya connectors once a testnet is available; websocket books for real maker fills.
 - **M3**: mainnet arming per venue, Telegram / email / Windows alerts, VPS packaging (Docker).
 
 ## Layout
@@ -56,13 +58,14 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
 it45/            Python package (FastAPI backend)
   venues/        one adapter per venue -> normalised Quote (docs/01 has the units)
   opportunities.py  pure functions: cross-venue arb, spot carry, matrix
-  trading/       engine, brokers (paper, hl_testnet), guard, executor, strategies, risk
+  trading/       engine, brokers (paper, hl/bulk/meridian testnet), guard, executor, strategies, risk
   feed.py        poller + venue health;  store.py  SQLite + settings
   api.py         /api/* JSON + serves the built dashboard from it45/web
   web/           built dashboard (committed, so Node is not needed to run)
 frontend/        React + Vite source of the dashboard
 tests/           pytest
-docs/            00 spec, 01 venue APIs
+docs/            00 spec, 01 venue APIs, 02 paper model, 03 keys + testnet setup
+scripts/         testnet wallet/signer setup, testnet smoke test
 data/            it45.db, settings.json (created at runtime, git-ignored)
 ```
 

@@ -21,7 +21,7 @@ export type TStatus = {
   risk: { day?: string; day_start_equity?: number; equity?: number; pnl_today?: number; limit?: number };
   broker_errors: Record<string, string>; brokers: Record<string, string>;
   strategies: Record<string, { enabled: boolean; note: string; last_eval: number }>;
-  keys: Record<string, boolean>;
+  keys: Record<string, boolean>; testnet_capable: string[];
 };
 type Pair = { id: string; strategy: string; symbol: string; long_venue: string; long_kind: string;
   short_venue: string; target_usd: number; status: string; opened_ts: number; closed_ts: number | null;
@@ -335,14 +335,14 @@ export function LimitsPage() {
                 <td>
                   <div className="seg" role="group" aria-label={`${V(v)} mode`}>
                     {["off", "paper", "testnet"].map((m) => (
-                      <button key={m} aria-pressed={t.data!.config.venue_modes[v] === m} disabled={a.busy || (m === "testnet" && v !== "hyperliquid")}
-                        title={m === "testnet" && v !== "hyperliquid" ? "No testnet connector for this venue yet" : undefined}
+                      <button key={m} aria-pressed={t.data!.config.venue_modes[v] === m} disabled={a.busy || (m === "testnet" && !t.data!.testnet_capable.includes(v))}
+                        title={m === "testnet" && !t.data!.testnet_capable.includes(v) ? "No testnet connector for this venue yet" : undefined}
                         onClick={() => modeChange(v, m)}>{m}</button>
                     ))}
                   </div>
                 </td>
                 <td className="small">{t.data!.broker_errors[v] ? <span className="err-text">{t.data!.broker_errors[v]}</span>
-                  : v === "hyperliquid" ? (t.data!.keys.hyperliquid_testnet ? "testnet key found in .env" : "paper; add a testnet key to .env for testnet")
+                  : t.data!.testnet_capable.includes(v) ? (t.data!.keys[v] ? "testnet key found in .env" : "add a testnet key to .env to use testnet")
                   : "paper only (real connector pending)"}</td>
               </tr>
             ))}
@@ -443,14 +443,16 @@ export function KeysPage() {
         <thead><tr><th>Venue</th><th>Key type</th><th>Can withdraw?</th><th>This build</th></tr></thead>
         <tbody>
           <tr><td>Hyperliquid</td><td>Agent (API) wallet approved by your account</td><td>No, by design of agent wallets</td>
-            <td>{t.data?.keys.hyperliquid_testnet ? <b className="pos">testnet key found</b> : "testnet: add IT45_HL_AGENT_KEY and IT45_HL_ACCOUNT_ADDRESS"}</td></tr>
+            <td>{t.data?.keys.hyperliquid ? <b className="pos">testnet key found</b> : "testnet: add IT45_HL_AGENT_KEY and IT45_HL_ACCOUNT_ADDRESS"}</td></tr>
           <tr><td>Arcus</td><td>Ed25519 API key</td><td>Trade keys are refused for withdrawals unless you opt in</td><td>paper only</td></tr>
-          <tr><td>Bulk</td><td>Ed25519 agent wallet</td><td>Not documented; confirm before funding</td><td>paper only</td></tr>
+          <tr><td>Bulk</td><td>Ed25519 agent wallet</td><td>Not documented; confirm before funding</td>
+            <td>{t.data?.keys.bulk ? <b className="pos">testnet key found</b> : "testnet: add IT45_BULK_SIGNER_KEY"}</td></tr>
           <tr><td>Reya</td><td>EIP-712 signer</td><td>Not documented; confirm before funding</td><td>paper only</td></tr>
-          <tr><td>Meridian</td><td>EVM linked signer</td><td>No (linked signers cannot withdraw)</td><td>paper only</td></tr>
+          <tr><td>Meridian</td><td>EVM linked signer</td><td>No (linked signers cannot withdraw)</td>
+            <td>{t.data?.keys.meridian ? <b className="pos">testnet key found</b> : "testnet: add IT45_MERIDIAN_SIGNER_KEY and IT45_MERIDIAN_ACCOUNT"}</td></tr>
         </tbody>
       </table>
-      <p className="muted small">Setup steps for the Hyperliquid testnet agent key are in docs/03_keys.md. Restart IT45 after editing .env.</p>
+      <p className="muted small">Setup steps for each testnet key are in docs/03_keys.md. Restart IT45 after editing .env.</p>
     </>
   );
 }

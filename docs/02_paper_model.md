@@ -40,3 +40,10 @@ The venue's base maker/taker rates, or your overrides under Settings → Fees.
 ## What this does not model
 Depth, queue position, partial fills, venue outages mid-order, funding settlement timing
 (accrual is continuous; venues settle hourly), Meridian position fees, Arcus off-hours bands.
+
+## Testnet versus paper
+A venue in **testnet** mode sends real signed orders to that venue's test exchange. The
+strategies still choose pairs from **mainnet** funding (the feed), because testnet funding and
+prices are play-market values. Testnet therefore proves the plumbing (signing, order types,
+fills, cancels, positions, brakes, kill switch) and not the profit: P&L that matters comes from
+paper on live mainnet prices until M3.

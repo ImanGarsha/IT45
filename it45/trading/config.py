@@ -8,7 +8,7 @@ from __future__ import annotations
 import copy
 
 MODES = ("off", "paper", "testnet")          # M2: no mainnet. M3 adds "mainnet" behind arming.
-TESTNET_CAPABLE = {"hyperliquid"}            # venues with a real testnet connector in this build
+TESTNET_CAPABLE = {"hyperliquid", "bulk", "meridian"}   # venues with a real testnet connector
 MAX_LEVERAGE = 10.0                          # PI decision: configurable up to 10x per leg
 
 DEFAULTS: dict = {

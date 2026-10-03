@@ -177,7 +177,7 @@ def test_config_validation(eng):
     with pytest.raises(ConfigError):
         e.update_cfg({"leverage": 11})
     with pytest.raises(ConfigError):
-        e.update_cfg({"venue_modes": {"bulk": "testnet"}})        # no Bulk testnet connector yet
+        e.update_cfg({"venue_modes": {"arcus": "testnet"}})       # no Arcus testnet connector yet
     with pytest.raises(ConfigError):
         e.update_cfg({"venue_modes": {"bulk": "mainnet"}})
     with pytest.raises(ConfigError):

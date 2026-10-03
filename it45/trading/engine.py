@@ -93,10 +93,19 @@ class Engine:
     def _build_broker(self, venue: str):
         mode = self.cfg()["venue_modes"].get(venue, "off")
         self.broker_errors.pop(venue, None)
-        if mode == "testnet" and venue == "hyperliquid":
+        if mode == "testnet":
             try:
-                from .hl_testnet import HyperliquidTestnet
-                self.brokers[venue] = HyperliquidTestnet(self.db, os.environ)
+                if venue == "hyperliquid":
+                    from .hl_testnet import HyperliquidTestnet
+                    self.brokers[venue] = HyperliquidTestnet(self.db, os.environ)
+                elif venue == "bulk":
+                    from .bulk_testnet import BulkTestnet
+                    self.brokers[venue] = BulkTestnet(self.db, os.environ, self.cfg)
+                elif venue == "meridian":
+                    from .meridian_testnet import MeridianTestnet
+                    self.brokers[venue] = MeridianTestnet(self.db, os.environ)
+                else:
+                    raise RuntimeError(f"no testnet connector for {venue}")
                 return
             except Exception as ex:
                 # never fall back to paper silently when testnet was asked for
@@ -260,7 +269,10 @@ class Engine:
             "brokers": {v: br.mode for v, br in self.brokers.items()},
             "strategies": {n: {"enabled": c["strategies"][n]["enabled"], "note": s.last_note,
                                "last_eval": s.last_eval} for n, s in self.strategies.items()},
-            "keys": {"hyperliquid_testnet": bool(os.environ.get("IT45_HL_AGENT_KEY"))},
+            "keys": {"hyperliquid": bool(os.environ.get("IT45_HL_AGENT_KEY")),
+                     "bulk": bool(os.environ.get("IT45_BULK_SIGNER_KEY")),
+                     "meridian": bool(os.environ.get("IT45_MERIDIAN_SIGNER_KEY"))},
+            "testnet_capable": sorted(tcfg.TESTNET_CAPABLE),
         }
 
 

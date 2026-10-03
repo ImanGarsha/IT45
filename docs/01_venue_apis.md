@@ -47,9 +47,9 @@ deliberately **not** matched.
 ## Testnets (for M2 order entry)
 | Venue | Testnet market data | Status |
 |---|---|---|
-| Hyperliquid | `https://api.hyperliquid-testnet.xyz/info` | exists |
-| Bulk | `https://exchange-api.bulk.trade/api/v1` | exists (faucet) |
-| Meridian | `https://api.meridiantest.net` | exists (faucet) |
+| Hyperliquid | `https://api.hyperliquid-testnet.xyz/info` | connector built (SDK) |
+| Bulk | `https://exchange-api.bulk.trade/api/v1` | connector built and verified live (bulk-keychain, signature domain `testnet`) |
+| Meridian | `https://api.meridiantest.net` | connector built; signing verified live (EIP-712 domain chainId 46630 from /v1/rpc/config) |
 | Arcus | not found in public docs | paper fills on the live book |
 | Reya | not listed in API 3.6.2 docs | paper fills until found |
 
