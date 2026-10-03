@@ -10,6 +10,7 @@ from .brokers import PaperBroker, Position
 from .db import TradeDB
 from .executor import Executor, Leg
 from .guard import Guard
+from .manual import Manual
 from .risk import Risk
 from .strategies import FundingArb, SpotCarry
 
@@ -64,6 +65,8 @@ class Engine:
         self.executor = Executor(self)
         self.risk = Risk(self)
         self.strategies = {s.name: s for s in (FundingArb(self), SpotCarry(self))}
+        self.manual = Manual(self)
+        self.last_positions: list = []       # refreshed by the risk pass; read by strategies
         self.brokers: dict = {}
         self.broker_errors: dict[str, str] = {}
         self.api_errors: dict[str, int] = {}
@@ -140,8 +143,19 @@ class Engine:
         if self.hub is not None:
             self._spawn(self.hub.want(self.wanted_streams()))
         self._spawn(self.risk.run())
+        self._spawn(self._refresh_live_orders())
         for s in self.strategies.values():
             self._spawn(s.evaluate())
+
+    async def _refresh_live_orders(self):
+        """Resting orders on a real (testnet) venue only change state there: poll them."""
+        for o in self.db.q("SELECT id, venue FROM orders WHERE status='open' AND mode='testnet' LIMIT 20"):
+            br = self.brokers.get(o["venue"])
+            if br is not None and br.mode == "testnet":
+                try:
+                    await br.status(o["id"])
+                except Exception:
+                    pass
 
     def _spawn(self, coro):
         t = asyncio.create_task(coro)
@@ -278,7 +292,8 @@ class Engine:
         p = next((p for p in self.db.open_pairs() if p["id"] == pair_id), None)
         if not p:
             raise ConfigError("pair not open")
-        await self.strategies[p["strategy"]].close_pair(p, reason)
+        closer = self.strategies.get(p["strategy"]) or self.strategies["funding_arb"]   # manual pairs
+        await closer.close_pair(p, reason)
 
     def reset_paper(self, venue: str):
         br = self.brokers.get(venue)

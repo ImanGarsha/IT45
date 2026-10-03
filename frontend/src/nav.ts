@@ -28,6 +28,7 @@ export const NAV: NavSection[] = [
     { id: "spot-carry", label: "Spot carry" },
   ]},
   { id: "orders", label: "Orders & positions", icon: "orders", items: [
+    { id: "new", label: "New order" },
     { id: "positions", label: "Positions" },
     { id: "open", label: "Open orders" },
     { id: "history", label: "Trade history" },

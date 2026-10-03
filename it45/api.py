@@ -202,6 +202,45 @@ def create_app(start_feed: bool = True) -> FastAPI:
             _bad(e)
         return {"ok": True}
 
+    # ---- manual trading -----------------------------------------------------
+    from .trading.manual import ManualError
+
+    async def _manual(coro):
+        try:
+            return await coro
+        except (ManualError, ConfigError) as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/trading/ticket")
+    async def trading_ticket(venue: str, symbol: str, kind: str = "perp"):
+        return await _manual(engine.manual.ticket(venue, symbol.upper(), kind))
+
+    @app.post("/api/trading/manual/order")
+    async def trading_manual_order(body: dict):
+        return await _manual(engine.manual.order(
+            venue=body.get("venue"), symbol=str(body.get("symbol", "")).upper(), kind=body.get("kind", "perp"),
+            side=body.get("side"), order_type=body.get("type", "market"),
+            size=float(body["size"]) if body.get("size") else None,
+            usd=float(body["usd"]) if body.get("usd") else None,
+            price=float(body["price"]) if body.get("price") else None,
+            reduce_only=bool(body.get("reduce_only"))))
+
+    @app.post("/api/trading/manual/pair")
+    async def trading_manual_pair(body: dict):
+        return await _manual(engine.manual.pair(
+            symbol=str(body.get("symbol", "")).upper(), long_venue=body.get("long_venue"),
+            long_kind=body.get("long_kind", "perp"), short_venue=body.get("short_venue"),
+            usd=float(body.get("usd") or 0)))
+
+    @app.post("/api/trading/positions/close")
+    async def trading_close_position(body: dict):
+        return await _manual(engine.manual.close_position(body.get("venue"), str(body.get("symbol", "")).upper(),
+                                                          body.get("kind", "perp")))
+
+    @app.post("/api/trading/orders/{order_id}/cancel")
+    async def trading_cancel_order(order_id: str):
+        return await _manual(engine.manual.cancel(order_id))
+
     @app.post("/api/trading/venues/{venue}/resume")
     def trading_resume(venue: str):
         engine.resume_venue(venue)

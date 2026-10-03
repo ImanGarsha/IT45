@@ -321,3 +321,74 @@ def test_capped_candidate_is_skipped_without_a_pair_row(eng):
     assert e.db.q("SELECT COUNT(*) n FROM pairs")[0]["n"] == 0
     assert "skipped" in s.last_note
     assert e.db.q("SELECT COUNT(*) n FROM orders")[0]["n"] == 0
+
+
+# ---------------------------------------------------------------- manual trading
+from it45.trading.manual import ManualError  # noqa: E402
+
+
+def test_manual_market_order_goes_through_guard(eng):
+    e, feed, _ = eng
+    feed.set("bulk", "BTC", 100.0, taker=0.0005)
+    r = run(e.manual.order(venue="bulk", symbol="BTC", kind="perp", side="buy", order_type="market", usd=100))
+    assert r["status"] == "filled" and r["filled"] == pytest.approx(1.0)
+    r = run(e.manual.order(venue="bulk", symbol="BTC", kind="perp", side="buy", order_type="market", usd=300))
+    assert r["status"] == "not filled" and "per-order cap" in r["error"]
+    e.update_cfg({"kill_switch": True})
+    r = run(e.manual.order(venue="bulk", symbol="BTC", kind="perp", side="buy", order_type="market", usd=50))
+    assert "Kill switch" in r["error"]
+
+
+def test_manual_limit_rests_or_crosses(eng):
+    e, feed, _ = eng
+    feed.set("arcus", "ETH", 100.0, maker=0.0, taker=0.0003)
+    rest = run(e.manual.order(venue="arcus", symbol="ETH", kind="perp", side="buy", order_type="limit",
+                              size=1, price=99.0))
+    assert rest["status"] == "open" and rest["note"] == "resting as maker"
+    cross = run(e.manual.order(venue="arcus", symbol="ETH", kind="perp", side="buy", order_type="limit",
+                               size=1, price=100.3))
+    assert cross["status"] == "filled" and cross["avg_px"] == pytest.approx(100.02)
+    with pytest.raises(ManualError, match="would cross"):
+        run(e.manual.order(venue="arcus", symbol="ETH", kind="perp", side="buy", order_type="post_only",
+                           size=1, price=100.3))
+    c = run(e.manual.cancel(rest["order_id"]))
+    assert c["status"] == "canceled"
+
+
+def test_manual_off_venue_and_close_position(eng):
+    e, feed, _ = eng
+    feed.set("reya", "SOL", 100.0)
+    e.update_cfg({"venue_modes": {"meridian": "off"}})
+    with pytest.raises(ManualError, match="off"):
+        run(e.manual.order(venue="meridian", symbol="BTC", kind="perp", side="buy", order_type="market", usd=10))
+    run(e.manual.order(venue="reya", symbol="SOL", kind="perp", side="sell", order_type="market", usd=100))
+    r = run(e.manual.close_position("reya", "SOL", "perp"))
+    assert r["filled"] == pytest.approx(1.0) and run(e.position("reya", "SOL", "perp")) is None
+
+
+def test_manual_pair_and_strategy_avoids_manual_legs(eng):
+    e, feed, store = eng
+    feed.set("bulk", "BTC", 100.0, taker=0.0001)
+    feed.set("reya", "BTC", 100.0, funding=0.3 / 8760, taker=0.0001)
+    r = run(e.manual.pair(symbol="BTC", long_venue="bulk", long_kind="perp", short_venue="reya", usd=100))
+    p = e.db.q("SELECT * FROM pairs WHERE id=?", (r["pair_id"],))[0]
+    assert p["strategy"] == "manual" and p["status"] == "open"
+    run(e.risk.run())                     # refreshes last_positions
+    _history(store, 0.3 / 8760)
+    e.update_cfg({"strategies": {"funding_arb": {"enabled": True, "eval_s": 0}}})
+    run(e.strategies["funding_arb"].evaluate())
+    assert len(e.db.open_pairs()) == 1    # the strategy did not stack onto the manual legs
+    with pytest.raises(ManualError, match="leg of open pair"):
+        run(e.manual.close_position("bulk", "BTC", "perp"))   # would leave the pair one-legged
+    run(e.close_pair(r["pair_id"]))
+    assert e.db.q("SELECT status FROM pairs WHERE id=?", (r["pair_id"],))[0]["status"] == "closed"
+
+
+def test_guard_price_check_is_one_sided(eng):
+    e, feed, _ = eng
+    feed.set("bulk", "BTC", 100.0)
+    far_bid = run(e.manual.order(venue="bulk", symbol="BTC", kind="perp", side="buy", order_type="limit",
+                                 size=1, price=90.0))
+    assert far_bid["status"] == "open"
+    through = run(e.executor._submit(Leg("bulk", "BTC", "perp", "buy", 1.0), 1.0, 102.0, False, None))
+    assert through[0] is None and "through mid" in through[1]

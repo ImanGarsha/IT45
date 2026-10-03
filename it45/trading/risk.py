@@ -29,6 +29,7 @@ class Risk:
             return
         self.busy = True
         try:
+            self.e.last_positions = await self.e.all_positions()
             await self._stale()
             await self._daily_loss()
             await self._pairs()

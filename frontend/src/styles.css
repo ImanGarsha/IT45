@@ -88,7 +88,7 @@ code { font-size: .92em; background: var(--panel-2); padding: 1px 5px; border-ra
 .page-head .sub { margin: 0; color: var(--muted); max-width: 78ch; }
 .controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .controls label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
-select, input[type="search"], input[type="number"] { background: var(--panel); border: 1px solid var(--line-2);
+select, input[type="search"], input[type="number"], input:not([type]) { background: var(--panel); border: 1px solid var(--line-2);
   border-radius: var(--radius); padding: 6px 9px; min-height: 32px; }
 input[type="number"] { width: 110px; text-align: right; font-family: var(--font-num); }
 .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; }
@@ -223,3 +223,18 @@ input[type="number"] { width: 110px; text-align: right; font-family: var(--font-
   font-size: 12.5px; line-height: 1.45; box-shadow: 0 6px 18px rgb(0 0 0 / .28); pointer-events: none; }
 .help-toggle { width: 30px; height: 30px; justify-content: center; font-weight: 600; font-size: 14px; }
 .help-toggle.on { color: var(--brass); border-color: var(--brass); }
+
+/* ---- order ticket ---- */
+.ticket { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(240px, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 860px) { .ticket { grid-template-columns: 1fr; } }
+.ticket-side { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.field-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; align-items: center; }
+.ticket-form { max-width: none; }
+.amount { display: flex; gap: 8px; align-items: stretch; }
+.amount input { flex: 1; min-width: 0; }
+.seg-side button.buy[aria-pressed="true"] { background: var(--pos); color: #fff; }
+.seg-side button.sell[aria-pressed="true"] { background: var(--neg); color: #fff; }
+.review { border: 1px solid var(--line-2); border-left: 3px solid var(--pos); border-radius: var(--radius); padding: 10px 12px; }
+.review.sell { border-left-color: var(--neg); }
+.review p { margin: 0 0 6px; }
+.ticket input:not([type]), .form input:not([type]) { width: 140px; text-transform: uppercase; }

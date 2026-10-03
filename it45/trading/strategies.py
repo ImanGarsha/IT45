@@ -43,7 +43,9 @@ class PairStrategy:
         return c["venue_modes"].get(venue, "off") != "off" and venue not in self.e.guard.halted
 
     def _taken(self) -> set:
-        t = set()
+        # every leg already held -- by a pair or by a manual order -- is off limits, because a
+        # strategy pair assumes its legs ARE the venue positions
+        t = {(p.venue, p.symbol, p.kind) for p in self.e.last_positions if abs(p.size) > 1e-12}
         for p in self.e.db.open_pairs():
             t.add((p["long_venue"], p["symbol"], p["long_kind"]))
             t.add((p["short_venue"], p["symbol"], p["short_kind"]))

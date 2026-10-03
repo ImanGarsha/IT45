@@ -4,17 +4,27 @@ import { chromium } from "playwright";
 const base = process.argv[2] || "http://127.0.0.1:8045";
 const routes = ["overview/summary", "overview/health", "venues/hyperliquid", "venues/bulk", "markets/funding",
   "markets/funding?BTC", "markets/prices", "markets/spot", "opportunities/cross", "opportunities/carry",
-  "strategies/funding-arb", "strategies/spot-carry", "orders/positions", "orders/open", "orders/history",
+  "strategies/funding-arb", "strategies/spot-carry", "orders/new", "orders/new|limit", "orders/new|review", "orders/positions", "orders/open", "orders/history",
   "risk/limits", "risk/brakes", "risk/kill", "logs/events", "settings/general", "settings/fees",
   "settings/venues", "settings/keys"];
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined }).catch(() => chromium.launch());
 const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
 const missing = new Map();
 let checked = 0;
+// "route|state": after loading, click through to a state that shows more controls.
+const states = {
+  limit: ["Limit", "Bid"],
+  review: ["Review order", "Review pair"],
+};
 for (const r of routes) {
-  await p.goto(`${base}/#/${r}`);
+  const [route, state] = r.split("|");
+  await p.goto(`${base}/#/${route}`);
   await p.reload();
   await p.waitForTimeout(2500);
+  for (const name of states[state] || []) {
+    await p.getByRole("button", { name, exact: true }).first().click().catch(() => {});
+    await p.waitForTimeout(300);
+  }
   // open every menu section so all nav items are visible
   for (const s of await p.$$(".menu-sec[aria-expanded=false]")) await s.click();
   const res = await p.evaluate(() => {

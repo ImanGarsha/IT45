@@ -237,6 +237,9 @@ export function PositionsPage() {
             { key: "funding", label: "Funding", num: true, render: (r) => <span className={signCls(r.funding)}>{usd(r.funding)}</span> },
             { key: "fees", label: "Fees", num: true, render: (r) => usd(r.fees) },
             { key: "liq_distance", label: "To liquidation", num: true, render: (r) => r.liq_distance == null ? "–" : <span className={r.liq_distance < 0.3 ? "neg" : ""}>{pct(r.liq_distance, 0)}</span> },
+            { key: "close", label: "", render: (r) => <button className="btn-small" disabled={a.busy}
+              data-help="Close this leg now with a reduce-only order that crosses the spread (taker fee). A leg that belongs to an open pair is refused here (closing it would leave the pair one-legged): close the pair row above instead."
+              onClick={() => a.run(`${r.symbol} on ${V(r.venue)} closed.`, () => call("POST", "/api/trading/positions/close", { venue: r.venue, symbol: r.symbol, kind: r.kind }), pos.reload)}>Close</button> },
           ]} />
       </section>
       <section className="panel">
@@ -258,15 +261,19 @@ export function PositionsPage() {
 
 export function OpenOrdersPage() {
   const o = usePoll<Order[]>("/api/trading/orders?status=open", 3000);
+  const a = useAction();
   return (
     <>
-      <PageHead title="Open orders" sub="Post-only orders resting on a venue. The executor re-prices or cancels them every few seconds; nothing rests for long." />
-      <OrdersTable rows={o.data ?? []} />
+      <PageHead title="Open orders" sub="Orders resting on a venue. The bot's own orders are re-priced or cancelled within seconds; limit orders you placed under New order rest until they fill or you cancel them here." />
+      {a.note}
+      <OrdersTable rows={o.data ?? []} extra={{ key: "cancel", label: "", render: (r) => <button className="btn-small" disabled={a.busy}
+        data-help="Cancel this resting order. Anything already filled stays filled."
+        onClick={() => a.run("Order cancelled.", () => call("POST", `/api/trading/orders/${r.id}/cancel`), o.reload)}>Cancel</button> }} />
     </>
   );
 }
 
-function OrdersTable({ rows }: { rows: Order[] }) {
+function OrdersTable({ rows, extra }: { rows: Order[]; extra?: { key: string; label: string; render: (r: Order) => ReactNode } }) {
   return (
     <Table rows={rows} rowKey={(r) => r.id} initialSort={["ts", -1]}
       empty={<div className="empty"><h3>No orders</h3></div>} cols={[
@@ -281,6 +288,7 @@ function OrdersTable({ rows }: { rows: Order[] }) {
         { key: "avg_px", label: "Avg price", num: true, render: (r) => price(r.avg_px) },
         { key: "fee", label: "Fee", num: true, render: (r) => r.fee ? usd(r.fee) : "–" },
         { key: "status", label: "Status", render: (r) => <span data-help={r.error ?? undefined} className={r.status === "rejected" ? "neg" : ""}>{r.status}{r.error ? ": " + r.error : ""}</span> },
+        ...(extra ? [extra] : []),
       ]} />
   );
 }

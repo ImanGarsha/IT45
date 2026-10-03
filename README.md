@@ -32,7 +32,21 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
 Rest the pointer on anything (menu item, column header, number, button, setting) for half a
 second and a plain-English explanation appears. A table cell explains its column. The **?**
 button in the top bar turns it off and on. The texts live in `frontend/src/help.ts`;
-`scripts/help_audit.mjs` checks every page for elements without help (currently 0 of 1,636).
+`scripts/help_audit.mjs` checks every page for elements without help (currently 0 of 1,958).
+
+## Manual orders
+**Orders & positions → New order** lets you trade yourself on any venue set to paper or testnet:
+- **Single order**: market, limit (rests as maker unless it crosses) or post-only; size in USD or
+  units; reduce-only. A live side panel shows the book, your position, equity, margin and fee.
+  *Review order* shows exactly what will be sent; *Place* sends it.
+- **Hedged pair**: long on one venue, short on another (or HL spot vs perp), same size, maker first.
+  Recorded as a `manual` pair, so the imbalance and liquidation brakes watch it and the bot will
+  not stack onto it.
+- **Open orders → Cancel** removes a resting order; **Positions → Close** shuts one leg (refused
+  for a leg owned by an open pair: close the pair instead).
+
+Manual orders pass the same guard as the bot (kill switch, venue mode, price sanity, caps) and
+are audited. No mainnet until M3.
 
 ## Menu
 
@@ -43,7 +57,7 @@ button in the top bar turns it off and on. The texts live in `frontend/src/help.
 | Markets | Funding matrix (+ history chart), Price matrix, Hyperliquid spot |
 | Opportunities | Cross-venue funding, Spot-perp carry |
 | Strategies | Funding arb, Spot carry: start/stop, live candidates, rules |
-| Orders & positions | Positions (pairs, legs, accounts), Open orders, Trade history |
+| Orders & positions | **New order** (manual ticket), Positions (pairs, legs, accounts, Close), Open orders (Cancel), Trade history |
 | Risk | Limits (venue modes, caps, leverage, execution), Brakes, Kill switch |
 | Logs | Events |
 | Settings | General, Fees, Venues, API keys |
@@ -56,6 +70,7 @@ button in the top bar turns it off and on. The texts live in `frontend/src/help.
 - **M2.x (this build)**: real testnet connectors for **Bulk** (verified live end to end) and
   **Meridian** (signing verified live), setup scripts for both, `scripts/testnet_smoke.py`.
 - **Streams**: live websocket top of book + trade prints on all five venues for the markets in play; paper maker fills follow a queue model (docs/04).
+- **Manual trading**: order ticket, hedged pairs, close and cancel from the dashboard.
 - Next: Arcus and Reya connectors once a testnet is available; M3 mainnet arming.
 - **M3**: mainnet arming per venue, Telegram / email / Windows alerts, VPS packaging (Docker).
 

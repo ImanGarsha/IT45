@@ -73,11 +73,13 @@ class Guard:
         if book_age_s is not None and book_age_s > stale:
             step("price", False, f"book {book_age_s:.0f}s old")
             return no(f"Book is {book_age_s:.0f}s old (limit {stale:.0f}s).")
-        dev_bp = abs(price - book_mid) / book_mid * 1e4
+        # only the AGGRESSIVE side is checked: a buy far above mid (or a sell far below) would pay
+        # through the market; a buy resting below mid is a harmless limit order
+        dev_bp = ((price - book_mid) if side == "buy" else (book_mid - price)) / book_mid * 1e4
         max_dev = float(c["exec"]["max_slippage_bp"]) + 50
         if dev_bp > max_dev:
             step("price", False, f"limit {dev_bp:.0f} bp from mid")
-            return no(f"Limit price is {dev_bp:.0f} bp from mid (max {max_dev:.0f}).")
+            return no(f"Limit price is {dev_bp:.0f} bp through mid (max {max_dev:.0f}): it would pay far beyond the market.")
         step("price", True, f"{dev_bp:.1f} bp from mid")
 
         if not reduce_only:
