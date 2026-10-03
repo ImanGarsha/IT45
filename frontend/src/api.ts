@@ -19,6 +19,7 @@ export type Opp = {
   long_leg: string; long_funding_apr: number; short_funding_apr: number; edge_apr: number;
   cost_bp: number; net_apr: number; net_bp: number; breakeven_h: number | null;
   basis_bp: number | null; min_volume_usd: number; flags: string[];
+  persistence?: { n: number; mean_edge_apr: number | null; frac_positive: number | null; hours_covered: number };
 };
 export type OppResp = { horizon_hours: number; mode: string; min_volume_usd: number; rows: Opp[] };
 

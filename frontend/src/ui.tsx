@@ -7,11 +7,13 @@ export const bp = (x: number | null | undefined, d = 1) =>
   x == null || !isFinite(x) ? "–" : `${x.toFixed(d)} bp`;
 export const usd = (x: number | null | undefined) => {
   if (x == null || !isFinite(x)) return "–";
-  const a = Math.abs(x);
-  if (a >= 1e9) return `$${(x / 1e9).toFixed(2)}B`;
-  if (a >= 1e6) return `$${(x / 1e6).toFixed(2)}M`;
-  if (a >= 1e3) return `$${(x / 1e3).toFixed(1)}k`;
-  return `$${x.toFixed(0)}`;
+  const a = Math.abs(x), s = x < 0 ? "-" : "";
+  if (a >= 1e9) return `${s}$${(a / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(2)}M`;
+  if (a >= 1e4) return `${s}$${(a / 1e3).toFixed(1)}k`;
+  if (a >= 100) return `${s}$${a.toFixed(0)}`;
+  if (a >= 0.01 || a === 0) return `${s}$${a.toFixed(2)}`;
+  return `${s}$${a.toFixed(4)}`;
 };
 export const price = (x: number | null | undefined) => {
   if (x == null || !isFinite(x)) return "–";

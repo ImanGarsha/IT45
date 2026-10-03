@@ -68,6 +68,7 @@ DEFAULT_SETTINGS = {
     "min_volume_usd": 100_000,
     "enabled_venues": ["hyperliquid", "arcus", "bulk", "reya", "meridian"],
     "fee_overrides": {},           # {"bulk": {"maker": 0, "taker": 0.00035}}
+    "trading": {},                 # see it45/trading/config.py DEFAULTS
 }
 
 

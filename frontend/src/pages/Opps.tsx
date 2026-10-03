@@ -18,6 +18,9 @@ export const oppCols: Col<Opp>[] = [
     title: "Hours of today's spread needed to pay the fees" },
   { key: "basis", label: "Price gap", num: true, get: (o) => o.basis_bp, render: (o) => bp(o.basis_bp),
     title: "Short price minus long price. Positive = you sell the richer leg" },
+  { key: "persist", label: "6 h mean", num: true, get: (o) => o.persistence?.mean_edge_apr ?? null,
+    title: "Average funding spread over the last 6 hours from stored snapshots, and the share of minutes it was positive",
+    render: (o) => o.persistence && o.persistence.n ? <span title={`${o.persistence.n} samples, positive ${pct(o.persistence.frac_positive, 0)} of the time`}>{pct(o.persistence.mean_edge_apr, 1)} <span className="muted">{pct(o.persistence.frac_positive, 0)}</span></span> : <span className="muted">no history</span> },
   { key: "min_volume_usd", label: "Thinner leg 24h vol", num: true, render: (o) => usd(o.min_volume_usd) },
   { key: "flags", label: "Check", get: (o) => o.flags.length, render: (o) => o.flags.length
       ? <span className="flags" title={o.flags.join("\n")}>{o.flags.length} note{o.flags.length > 1 ? "s" : ""}</span> : "" },
@@ -54,8 +57,8 @@ function OppPage({ endpoint, title, sub, empty }: { endpoint: string; title: str
     <>
       <PageHead title={title} sub={sub} right={<Controls q={q} set={setQ} />} />
       <Notice>
-        Rates are today's and change every hour. A high number here is a reason to look, not to trade: M2 measures how long
-        each spread has persisted before the strategy may act on it.
+        Rates are today's and change every hour. The 6 h column shows how the spread has actually behaved; the strategies
+        only trade spreads that have persisted (rules under Strategies).
       </Notice>
       {r.error && <Notice kind="err">{r.error}</Notice>}
       <Table rows={r.data?.rows ?? []} cols={oppCols} initialSort={["net_apr", -1]} onRow={setSel}

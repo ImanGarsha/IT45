@@ -9,7 +9,7 @@ export function Summary({ venues, health }: PageProps) {
   const perps = venues.reduce((a, v) => a + v.perps, 0);
   return (
     <>
-      <PageHead title="Summary" sub="Live funding and prices from all five venues. Nothing trades in this build." />
+      <PageHead title="Summary" sub="Live funding and prices from all five venues, and what the bot is doing with them." />
       <div className="stats">
         <Stat label="Venue feeds live" value={`${health?.venues_ok ?? "–"} / ${health?.venues_enabled ?? 5}`}
           hint={venues.filter((v) => !v.ok).map((v) => v.label).join(", ") || "all responding"} />

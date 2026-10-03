@@ -7,8 +7,14 @@ The lesson carried over from IT4-2: fees, not forecasts, were the binding constr
 trades spreads (funding differences between venues, Hyperliquid spot-perp carry) with
 maker-first execution, rather than directional predictions.
 
-**Current build: M1, read-only.** Live prices and funding from all five venues, a funding
-matrix, ranked opportunities net of fees. It holds no keys and contains no order code.
+**Current build: M2.** Live prices and funding from all five venues, and an automatic
+trader for both strategies in **paper** mode on every venue (simulated fills on live prices)
+and **testnet** mode on Hyperliquid. Every order passes a fail-closed guard; four brakes and a
+kill switch run independently of the strategies. No mainnet yet (M3).
+
+Strategies ship **stopped**. Start them under Strategies once a few hours of funding history
+have been stored: they only open spreads that have persisted (default: 6 h average above
+15 %/yr, positive 80 % of the time).
 
 ## Run it (Windows, PowerShell)
 
@@ -30,16 +36,18 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
 | Venues | one page per exchange: feed state, fees, every market |
 | Markets | Funding matrix (+ history chart), Price matrix, Hyperliquid spot |
 | Opportunities | Cross-venue funding, Spot-perp carry |
-| Strategies | Funding arb, Spot carry (M2) |
-| Orders & positions | Positions, Open orders, Trade history (M2) |
-| Risk | Limits, Brakes, Kill switch (M2) |
+| Strategies | Funding arb, Spot carry: start/stop, live candidates, rules |
+| Orders & positions | Positions (pairs, legs, accounts), Open orders, Trade history |
+| Risk | Limits (venue modes, caps, leverage, execution), Brakes, Kill switch |
 | Logs | Events |
-| Settings | General, Fees, Venues, API keys (M2) |
+| Settings | General, Fees, Venues, API keys |
 
 ## Milestones
-- **M1 (this build)**: read-only dashboard, all five venues, opportunity screen, SQLite history.
-- **M2**: order connectors (trade-only keys in `.env`), testnet / paper auto-trading of both
-  strategies, all four brakes, kill switch, funding-persistence measurement from the stored history.
+- **M1**: read-only dashboard, all five venues, opportunity screen, SQLite history.
+- **M2 (this build)**: paper trading on all venues, Hyperliquid testnet connector (agent key in
+  `.env`), both strategies with persistence-gated entry, maker-first executor with lone-leg
+  repair, guard, four brakes, kill switch. docs/02 (paper model), docs/03 (keys).
+- **M2.x**: real connectors for Bulk and Meridian (both have testnets), then Arcus and Reya.
 - **M3**: mainnet arming per venue, Telegram / email / Windows alerts, VPS packaging (Docker).
 
 ## Layout
@@ -48,6 +56,7 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
 it45/            Python package (FastAPI backend)
   venues/        one adapter per venue -> normalised Quote (docs/01 has the units)
   opportunities.py  pure functions: cross-venue arb, spot carry, matrix
+  trading/       engine, brokers (paper, hl_testnet), guard, executor, strategies, risk
   feed.py        poller + venue health;  store.py  SQLite + settings
   api.py         /api/* JSON + serves the built dashboard from it45/web
   web/           built dashboard (committed, so Node is not needed to run)

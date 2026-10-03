@@ -200,3 +200,19 @@ input[type="number"] { width: 110px; text-align: right; font-family: var(--font-
   .topbar { padding: 0 16px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---------- M2 trading ---------- */
+.btn:disabled, .btn-small:disabled, .seg button:disabled { opacity: .5; cursor: not-allowed; }
+.btn-stop { background: var(--neg); color: #fff; }
+.btn-big { padding: 12px 22px; font-size: 15px; }
+.btn-small { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 3px 10px; cursor: pointer; font-size: 12.5px; }
+.btn-small:hover { border-color: var(--brass); }
+.form-h { font-size: 15px; font-weight: 600; margin: 10px 0 0; }
+.wrap { white-space: normal; display: inline-block; max-width: 46ch; }
+.mode-pill { text-decoration: none; }
+.mode-pill.pill-kill { background: var(--neg); color: #fff; border-color: var(--neg); }
+.kill { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line-2); border-radius: var(--radius); padding: 22px 24px; max-width: 900px; }
+.kill h2 { margin: 0 0 4px; font-size: 18px; }
+.kill p { margin: 0; max-width: 60ch; }
+.kill-on { border-left-color: var(--neg); }

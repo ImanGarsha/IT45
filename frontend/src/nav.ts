@@ -24,18 +24,18 @@ export const NAV: NavSection[] = [
     { id: "carry", label: "Spot-perp carry" },
   ]},
   { id: "strategies", label: "Strategies", icon: "strategies", items: [
-    { id: "funding-arb", label: "Funding arb", m: 2 },
-    { id: "spot-carry", label: "Spot carry", m: 2 },
+    { id: "funding-arb", label: "Funding arb" },
+    { id: "spot-carry", label: "Spot carry" },
   ]},
   { id: "orders", label: "Orders & positions", icon: "orders", items: [
-    { id: "positions", label: "Positions", m: 2 },
-    { id: "open", label: "Open orders", m: 2 },
-    { id: "history", label: "Trade history", m: 2 },
+    { id: "positions", label: "Positions" },
+    { id: "open", label: "Open orders" },
+    { id: "history", label: "Trade history" },
   ]},
   { id: "risk", label: "Risk", icon: "risk", items: [
-    { id: "limits", label: "Limits", m: 2 },
-    { id: "brakes", label: "Brakes", m: 2 },
-    { id: "kill", label: "Kill switch", m: 2 },
+    { id: "limits", label: "Limits" },
+    { id: "brakes", label: "Brakes" },
+    { id: "kill", label: "Kill switch" },
   ]},
   { id: "logs", label: "Logs", icon: "logs", items: [
     { id: "events", label: "Events" },
@@ -44,7 +44,7 @@ export const NAV: NavSection[] = [
     { id: "general", label: "General" },
     { id: "fees", label: "Fees" },
     { id: "venues", label: "Venues" },
-    { id: "keys", label: "API keys", m: 2 },
+    { id: "keys", label: "API keys" },
   ]},
 ];
 

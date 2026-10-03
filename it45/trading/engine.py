@@ -1,0 +1,271 @@
+"""Trading engine: wires feed -> brokers -> risk -> strategies, and exposes actions to the API."""
+from __future__ import annotations
+
+import asyncio
+import os
+import time
+
+from . import config as tcfg
+from .brokers import PaperBroker, Position
+from .db import TradeDB
+from .executor import Executor, Leg
+from .guard import Guard
+from .risk import Risk
+from .strategies import FundingArb, SpotCarry
+
+
+class ConfigError(ValueError):
+    pass
+
+
+class Unavailable:
+    """Stands in for a connector that failed to start: refuses every order, shows why."""
+
+    def __init__(self, venue, mode, why):
+        self.venue, self.mode, self.why = venue, mode, why
+
+    async def book(self, symbol, kind):
+        return None
+
+    def cached_mid(self, symbol, kind):
+        return None
+
+    async def place(self, **kw):
+        from .brokers import Ack
+        return Ack("-", "rejected", error=f"connector unavailable: {self.why}")
+
+    async def status(self, order_id):
+        from .brokers import Ack
+        return Ack(order_id, "rejected", error=self.why)
+
+    cancel = status
+
+    async def cancel_all(self):
+        return 0
+
+    async def positions(self):
+        return []
+
+    async def account(self):
+        return {"venue": self.venue, "mode": self.mode, "error": self.why}
+
+    def tick(self, dt):
+        pass
+
+
+class Engine:
+    def __init__(self, feed, settings, store):
+        self.feed, self.settings, self.store = feed, settings, store
+        self.db = TradeDB(store)
+        self.guard = Guard(self.db, self.cfg)
+        self.executor = Executor(self)
+        self.risk = Risk(self)
+        self.strategies = {s.name: s for s in (FundingArb(self), SpotCarry(self))}
+        self.brokers: dict = {}
+        self.broker_errors: dict[str, str] = {}
+        self.api_errors: dict[str, int] = {}
+        self._last_cycle = time.time()
+        self._tasks: set[asyncio.Task] = set()
+        for v in feed.venues:
+            self._build_broker(v)
+        feed.listeners.append(self.on_cycle)
+
+    # ------------------------------------------------------------------ config
+    def cfg(self) -> dict:
+        return tcfg.merged(self.settings.data.get("trading"))
+
+    def update_cfg(self, patch: dict) -> dict:
+        cur = self.cfg()
+        new = tcfg.merged(_deep_merge(cur, patch))
+        errs = tcfg.validate(new)
+        for v, m in new["venue_modes"].items():
+            if m != cur["venue_modes"].get(v) and self._has_exposure_sync(v):
+                errs.append(f"{v}: close its positions before switching mode ({cur['venue_modes'][v]} -> {m})")
+        if errs:
+            raise ConfigError("; ".join(errs))
+        self.settings.update({"trading": new})
+        for v, m in new["venue_modes"].items():
+            if m != cur["venue_modes"].get(v):
+                self._build_broker(v)
+                self.db.audit("venue_mode", v, "", True, f"{cur['venue_modes'].get(v)} -> {m}")
+        return new
+
+    def _build_broker(self, venue: str):
+        mode = self.cfg()["venue_modes"].get(venue, "off")
+        self.broker_errors.pop(venue, None)
+        if mode == "testnet" and venue == "hyperliquid":
+            try:
+                from .hl_testnet import HyperliquidTestnet
+                self.brokers[venue] = HyperliquidTestnet(self.db, os.environ)
+                return
+            except Exception as ex:
+                # never fall back to paper silently when testnet was asked for
+                self.broker_errors[venue] = str(ex)
+                self.db.audit("broker_error", venue, "", False, str(ex))
+                self.brokers[venue] = Unavailable(venue, mode, str(ex))
+                return
+        self.brokers[venue] = PaperBroker(venue, self.feed, self.db, self.cfg)
+
+    def _has_exposure_sync(self, venue: str) -> bool:
+        if any(venue in (p["long_venue"], p["short_venue"]) for p in self.db.open_pairs()):
+            return True
+        br = self.brokers.get(venue)
+        if isinstance(br, PaperBroker):
+            return bool(self.db.q("SELECT 1 FROM paper_positions WHERE venue=? AND size!=0", (venue,)))
+        return False
+
+    # ------------------------------------------------------------------ clock
+    async def on_cycle(self):
+        now = time.time()
+        dt, self._last_cycle = now - self._last_cycle, now
+        for v, br in self.brokers.items():
+            if self.cfg()["venue_modes"].get(v) == "off":
+                continue
+            try:
+                br.tick(dt)
+            except Exception as ex:
+                self.db.audit("tick_error", v, "", False, repr(ex))
+        self._spawn(self.risk.run())
+        for s in self.strategies.values():
+            self._spawn(s.evaluate())
+
+    def _spawn(self, coro):
+        t = asyncio.create_task(coro)
+        self._tasks.add(t)
+        t.add_done_callback(self._tasks.discard)
+
+    # ------------------------------------------------------------------ helpers
+    def api_error(self, venue, msg):
+        n = self.api_errors[venue] = self.api_errors.get(venue, 0) + 1
+        if n >= int(self.cfg()["brakes"]["max_api_errors"]) and venue not in self.guard.halted:
+            self.guard.halted[venue] = f"{n} consecutive order errors (last: {msg})"
+            self.db.audit("venue_halted", venue, "", False, self.guard.halted[venue])
+
+    def api_ok(self, venue):
+        self.api_errors[venue] = 0
+
+    def resume_venue(self, venue):
+        self.guard.halted.pop(venue, None)
+        self.api_errors[venue] = 0
+        self.db.audit("venue_resumed", venue, "", True, "resumed from the dashboard")
+
+    def paper_or_live_mid(self, venue, symbol, kind) -> float | None:
+        br = self.brokers.get(venue)
+        if br is None:
+            return None
+        return br.cached_mid(symbol, kind)
+
+    async def position(self, venue, symbol, kind) -> Position | None:
+        for p in await self.brokers[venue].positions():
+            if p.symbol == symbol and p.kind == kind:
+                return p
+        return None
+
+    async def all_positions(self) -> list[Position]:
+        out = []
+        for v, br in self.brokers.items():
+            if self.cfg()["venue_modes"].get(v) == "off":
+                continue
+            try:
+                out += await br.positions()
+            except Exception as ex:
+                self.broker_errors[v] = str(ex)
+        return out
+
+    async def venue_gross(self, venue) -> float:
+        return sum(p.notional for p in await self.brokers[venue].positions())
+
+    async def book_gross(self) -> float:
+        return sum(p.notional for p in await self.all_positions())
+
+    async def accounts(self) -> list[dict]:
+        out = []
+        for v, br in self.brokers.items():
+            mode = self.cfg()["venue_modes"].get(v)
+            if mode == "off":
+                out.append({"venue": v, "mode": "off"})
+                continue
+            try:
+                out.append(await br.account())
+            except Exception as ex:
+                out.append({"venue": v, "mode": mode, "error": str(ex)})
+        return out
+
+    async def total_equity(self) -> float | None:
+        acc = [a for a in await self.accounts() if a.get("equity") is not None]
+        return sum(a["equity"] for a in acc) if acc else None
+
+    async def total_start_capital(self) -> float:
+        acc = await self.accounts()
+        return sum(a.get("start") or a.get("equity") or 0 for a in acc)
+
+    # ------------------------------------------------------------------ actions
+    async def kill(self, reason: str = "kill switch pressed"):
+        c = self.cfg()
+        c["kill_switch"] = True
+        for s in c["strategies"].values():
+            s["enabled"] = False
+        self.settings.update({"trading": c})
+        self.db.audit("kill_switch", "", "", False, reason)
+        for p in self.db.open_pairs():
+            self.db.update_pair(p["id"], status="closing", close_reason=f"kill switch: {reason}")
+        for br in self.brokers.values():
+            try:
+                await br.cancel_all()
+            except Exception as ex:
+                self.db.audit("kill_cancel_error", br.venue, "", False, repr(ex))
+        for _ in range(3):
+            left = [p for p in await self.all_positions() if abs(p.size) > 1e-12]
+            if not left:
+                break
+            for p in left:
+                side = "sell" if p.size > 0 else "buy"
+                await self.executor.ioc(Leg(p.venue, p.symbol, p.kind, side, abs(p.size), True), None)
+            await asyncio.sleep(2)
+        for p in self.db.open_pairs():
+            self.db.update_pair(p["id"], status="closed", closed_ts=time.time())
+        left = [p.to_dict() for p in await self.all_positions() if abs(p.size) > 1e-12]
+        return {"reason": reason, "positions_left": left}
+
+    def release_kill(self):
+        c = self.cfg()
+        c["kill_switch"] = False
+        self.settings.update({"trading": c})
+        self.db.audit("kill_released", "", "", True, "")
+
+    async def close_pair(self, pair_id: str, reason="closed from the dashboard"):
+        p = next((p for p in self.db.open_pairs() if p["id"] == pair_id), None)
+        if not p:
+            raise ConfigError("pair not open")
+        await self.strategies[p["strategy"]].close_pair(p, reason)
+
+    def reset_paper(self, venue: str):
+        br = self.brokers.get(venue)
+        if not isinstance(br, PaperBroker):
+            raise ConfigError(f"{venue} is not in paper mode")
+        if self._has_exposure_sync(venue):
+            raise ConfigError(f"close {venue}'s positions first")
+        br.reset()
+        self.db.audit("paper_reset", venue, "", True, "")
+
+    # ------------------------------------------------------------------ views
+    async def status(self) -> dict:
+        c = self.cfg()
+        return {
+            "config": c,
+            "halted": self.guard.halted,
+            "daily_loss_hit": self.guard.daily_loss_hit,
+            "risk": self.risk.state,
+            "broker_errors": self.broker_errors,
+            "brokers": {v: br.mode for v, br in self.brokers.items()},
+            "strategies": {n: {"enabled": c["strategies"][n]["enabled"], "note": s.last_note,
+                               "last_eval": s.last_eval} for n, s in self.strategies.items()},
+            "keys": {"hyperliquid_testnet": bool(os.environ.get("IT45_HL_AGENT_KEY"))},
+        }
+
+
+def _deep_merge(a: dict, b: dict) -> dict:
+    out = dict(a)
+    for k, v in (b or {}).items():
+        out[k] = _deep_merge(a[k], v) if isinstance(a.get(k), dict) and isinstance(v, dict) else v
+    return out

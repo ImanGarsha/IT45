@@ -3,6 +3,7 @@ import { Health, usePoll, VenueStatus, VENUE_ORDER } from "./api";
 import { Icon } from "./icons";
 import { DEFAULT_ROUTE, findRoute, NAV } from "./nav";
 import { Page } from "./pages";
+import { useTrading } from "./pages/Trading";
 import { Dot } from "./ui";
 
 function useHashRoute() {
@@ -42,6 +43,11 @@ export default function App() {
   const [open, setOpen] = useState<Record<string, boolean>>({ [route.split("/")[0]]: true });
   const venues = usePoll<VenueStatus[]>("/api/venues", 4000);
   const health = usePoll<Health>("/api/health", 8000);
+  const trading = useTrading(5000);
+  const tc = trading.data?.config;
+  const modeSet = tc ? Array.from(new Set(Object.values(tc.venue_modes).filter((m) => m !== "off"))) : [];
+  const pill = !tc ? "Connecting" : tc.kill_switch ? "Kill switch ON"
+    : `${modeSet.map((m) => m[0].toUpperCase() + m.slice(1)).join(" + ") || "All venues off"}${Object.values(tc.strategies).some((s) => s.enabled) ? ", bot running" : ", bot stopped"}`;
 
   useEffect(() => { const s = route.split("/")[0]; setOpen((o) => ({ ...o, [s]: true })); }, [route]);
 
@@ -110,9 +116,9 @@ export default function App() {
               ))}
               {venues.error && <span className="vd bad">server unreachable</span>}
             </div>
-            <span className="mode-pill" title="No keys are loaded and no order code exists in this build">
-              Read-only (M1)
-            </span>
+            <a href="#/risk/kill" className={`mode-pill ${tc?.kill_switch ? "pill-kill" : ""}`} title="Trading mode; opens the kill switch">
+              {pill}
+            </a>
             <button className="icon-btn" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
               <Icon name={theme === "dark" ? "sun" : "moon"} />
             </button>

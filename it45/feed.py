@@ -29,6 +29,7 @@ class Feed:
         self._last_snapshot = 0.0
         self._task: asyncio.Task | None = None
         self.cycles = 0
+        self.listeners: list = []      # async callables run after every cycle (trading engine)
 
     # ---- lifecycle -------------------------------------------------------
     def start(self):
@@ -59,9 +60,16 @@ class Feed:
             fresh = [q for n in enabled if self.health[n]["ok"] for q in self.quotes[n]]
             if fresh:
                 self.store.save_snapshot(fresh)
+        for fn in self.listeners:
+            try:
+                await fn()
+            except Exception as e:
+                self.store.log("error", "engine", f"cycle listener failed: {e!r}")
 
     async def _poll(self, name: str):
         h = self.health[name]
+        if time.time() < h.get("backoff_until", 0):
+            return                      # rate-limited: wait it out instead of hammering
         t0 = time.time()
         h["last_try"] = t0
         try:
@@ -75,7 +83,11 @@ class Feed:
                 self.store.log("info", name, "recovered")
         except Exception as e:
             h["fails"] += 1
-            msg = f"{type(e).__name__}: {e}"[:300]
+            msg = f"{type(e).__name__}: {e}".split("\n")[0][:300]
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+                wait = min(60.0, 5.0 * 2 ** (h["fails"] - 1))
+                h["backoff_until"] = time.time() + wait
+                msg = f"rate limited (HTTP 429), backing off {wait:.0f}s"
             if h["ok"] or h["fails"] == 1 or h["error"] != msg:
                 self.store.log("warn", name, f"poll failed: {msg}")
             h.update(ok=False, error=msg)
