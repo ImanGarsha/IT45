@@ -27,10 +27,18 @@ class ManualError(ValueError):
 class Manual:
     def __init__(self, engine):
         self.e = engine
+        self.watching: dict[tuple[str, str, str], float] = {}   # ticket markets -> last poll time
+
+    def watched(self, ttl_s: float = 30.0) -> list[tuple[str, str, str]]:
+        """Markets an open New order page is showing (polled within ttl_s): streamed live."""
+        now = time.time()
+        self.watching = {k: t for k, t in self.watching.items() if now - t < ttl_s}
+        return list(self.watching)
 
     async def ticket(self, venue: str, symbol: str, kind: str = "perp") -> dict:
         """Everything the order ticket shows for one market."""
         br = self._broker(venue)
+        self.watching[(venue, symbol, kind)] = time.time()
         book = await br.book(symbol, kind)
         pos = await self.e.position(venue, symbol, kind)
         acc = await br.account()

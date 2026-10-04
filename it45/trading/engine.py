@@ -187,6 +187,8 @@ class Engine:
                 for c in s.last_candidates[:top_n]:
                     add(c["long_venue"], c["symbol"], c["long_leg"])
                     add(c["short_venue"], c["symbol"])
+        for v, sym, k in self.manual.watched():     # the market open on the New order page
+            add(v, sym, k)
         return want
 
     # ------------------------------------------------------------------ helpers

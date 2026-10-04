@@ -392,3 +392,12 @@ def test_guard_price_check_is_one_sided(eng):
     assert far_bid["status"] == "open"
     through = run(e.executor._submit(Leg("bulk", "BTC", "perp", "buy", 1.0), 1.0, 102.0, False, None))
     assert through[0] is None and "through mid" in through[1]
+
+
+def test_ticket_market_is_streamed_while_watched(eng):
+    e, feed, _ = eng
+    feed.set("bulk", "ETH", 2000.0)
+    run(e.manual.ticket("bulk", "ETH", "perp"))
+    assert "ETH" in e.wanted_streams().get("bulk", set())
+    e.manual.watching[("bulk", "ETH", "perp")] -= 60      # page closed a minute ago
+    assert "ETH" not in e.wanted_streams().get("bulk", set())

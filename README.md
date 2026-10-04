@@ -28,6 +28,11 @@ First run creates `.venv` and installs; then the dashboard opens at http://127.0
 
 If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
+## User guide
+The full manual (every page, every setting with its default, manual trading, brakes, keys,
+troubleshooting, glossary) is the **IT45 User Guide** doc in the INTELLIGENT TRADER project on
+claude.ai. The hover help below is its short form inside the app.
+
 ## Hover help
 Rest the pointer on anything (menu item, column header, number, button, setting) for half a
 second and a plain-English explanation appears. A table cell explains its column. The **?**
