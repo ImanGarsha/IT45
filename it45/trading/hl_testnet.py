@@ -11,11 +11,12 @@ Prices for limit orders come from the TESTNET book (testnet prices differ from m
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import math
 import time
 
 from ..venues.base import norm_symbol
-from .brokers import Ack, Book, Broker, Position
+from .brokers import REQUEST_TIMEOUT_S, Ack, Book, Broker, Position, no_reply
 from .db import new_id
 
 TESTNET_URL = "https://api.hyperliquid-testnet.xyz"
@@ -64,8 +65,8 @@ class HyperliquidTestnet(Broker):
             from hyperliquid.exchange import Exchange
             from hyperliquid.info import Info
             wallet = Account.from_key(key if key.startswith("0x") else "0x" + key)
-            info = Info(TESTNET_URL, skip_ws=True)
-            exchange = Exchange(wallet, TESTNET_URL, account_address=self.address)
+            info = Info(TESTNET_URL, skip_ws=True, timeout=REQUEST_TIMEOUT_S)
+            exchange = Exchange(wallet, TESTNET_URL, account_address=self.address, timeout=REQUEST_TIMEOUT_S)
         self.info = info
         self.ex = _Guarded(exchange)
         self._load_meta()
@@ -137,9 +138,14 @@ class HyperliquidTestnet(Broker):
         tif = "Alo" if post_only else "Ioc"
         try:
             res = await self._call(self.ex.order, coin, side == "buy", sz, px, {"limit": {"tif": tif}},
-                                   reduce_only=reduce_only)
+                                   reduce_only=reduce_only, cloid=self._cloid(oid))
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
+            if no_reply(e):     # may have reached Hyperliquid: reconcile() finds it by client order id
+                self.coins[oid] = coin
+                self._record(oid, symbol, kind, side, sz, px, post_only, reduce_only, pair_id, "unknown",
+                             f"no reply from Hyperliquid ({msg})")
+                return Ack(oid, "unknown", error=f"no reply from Hyperliquid ({msg})")
             self._record(oid, symbol, kind, side, sz, px, post_only, reduce_only, pair_id, "rejected", msg)
             return Ack(oid, "rejected", error=msg)
         ack = self._parse(oid, res)
@@ -202,6 +208,27 @@ class HyperliquidTestnet(Broker):
             except Exception:
                 pass
         return await self.status(order_id)
+
+    @staticmethod
+    def _cloid(oid):
+        """Client order id derived from our id, so an order sent without a reply can be found."""
+        from hyperliquid.utils.types import Cloid
+        return Cloid("0x" + hashlib.md5(oid.encode()).hexdigest())
+
+    async def reconcile(self, order_id):
+        """An order sent without a reply: ask Hyperliquid by client order id; cancel it if it rests."""
+        if order_id not in self.oids:
+            r = await self._call(self.info.query_order_by_cloid, self.address, self._cloid(order_id))
+            o = (r or {}).get("order") or {}
+            if (r or {}).get("status") != "order" or not o:
+                self.db.update_order(order_id, status="canceled", error="no reply; Hyperliquid has no such order")
+                return Ack(order_id, "canceled")
+            self.oids[order_id] = int(o["order"]["oid"])
+            self.coins.setdefault(order_id, o["order"].get("coin"))
+        a = await self.status(order_id)
+        if a.status == "open":
+            a = await self.cancel(order_id)
+        return a
 
     async def cancel_all(self):
         n = 0

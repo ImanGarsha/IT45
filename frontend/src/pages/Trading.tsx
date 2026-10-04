@@ -18,7 +18,7 @@ export type TCfg = {
   strategies: Record<string, StratCfg>;
 };
 export type TStatus = {
-  config: TCfg; halted: Record<string, string>; daily_loss_hit: boolean;
+  config: TCfg; halted: Record<string, string>; daily_loss_hit: boolean; unknown_orders: number;
   risk: { day?: string; day_start_equity?: number; equity?: number; pnl_today?: number; limit?: number };
   broker_errors: Record<string, string>; brokers: Record<string, string>;
   strategies: Record<string, { enabled: boolean; note: string; last_eval: number }>;

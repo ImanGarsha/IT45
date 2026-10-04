@@ -36,6 +36,32 @@ function useStored(key: string, init: boolean) {
   return [v, setV] as const;
 }
 
+/** Says plainly what an outage means for trading: what is paused, what is not, what resumes by itself. */
+function OfflineBanner({ serverDown, venues, modes, unknown }:
+  { serverDown: boolean; venues: VenueStatus[]; modes?: Record<string, string>; unknown: number }) {
+  if (serverDown) {
+    return <div className="offline bad" role="alert" data-help="The dashboard gets no answer from IT45 on this computer. IT45 has stopped, or this browser lost its connection to it. Nothing trades while IT45 is stopped.">
+      <b>IT45 is not responding.</b> It has stopped or this page lost its connection. Nothing is trading;
+      open positions stay on the venues. Start it again with <code>.\run.ps1</code>.</div>;
+  }
+  const traded = venues.filter((v) => v.enabled && modes && modes[v.name] && modes[v.name] !== "off");
+  const down = traded.filter((v) => !v.ok || v.stale);
+  const notes = [];
+  if (traded.length && down.length === traded.length) {
+    notes.push(<div key="all" className="offline bad" role="alert" data-help="No venue you trade on has answered within the stale limit. Usually the internet connection is down or the computer slept. The guard refuses new orders on stale prices; brakes and strategies resume by themselves once prices are fresh.">
+      <b>No venue is answering: the internet connection may be down.</b> New orders are paused everywhere;
+      open positions stay on the venues and are checked again as soon as prices are fresh.</div>);
+  } else if (down.length) {
+    notes.push(<div key="some" className="offline warn" data-help="These venues have not answered within the stale limit. No new orders go there until their prices are fresh again; other venues trade normally.">
+      <b>{down.map((v) => v.label).join(", ")} not answering.</b> No new orders there until prices are fresh again.</div>);
+  }
+  if (unknown > 0) {
+    notes.push(<div key="unk" className="offline warn" data-help="Orders that were sent while the connection dropped, so no answer came back. IT45 asks the venue what became of each one once it answers again: a resting order is cancelled, a fill is booked, and the brakes repair any pair.">
+      <b>{unknown} order{unknown > 1 ? "s" : ""} sent without a reply.</b> IT45 will ask the venue what became of {unknown > 1 ? "them" : "it"} and cancel anything left resting.</div>);
+  }
+  return notes.length ? <>{notes}</> : null;
+}
+
 export default function App() {
   const route = useHashRoute().split("?")[0];
   const found = findRoute(route);
@@ -129,6 +155,8 @@ export default function App() {
             </button>
           </div>
         </div>
+        <OfflineBanner serverDown={!!venues.error} venues={venues.data ?? []}
+          modes={tc?.venue_modes} unknown={trading.data?.unknown_orders ?? 0} />
         <main className="content">
           {found ? <Page route={route} venues={venues.data ?? []} health={health.data} />
             : <div className="empty"><h3>That page does not exist</h3><a href={`#/${DEFAULT_ROUTE}`}>Go to the summary</a></div>}

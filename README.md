@@ -30,7 +30,7 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
 
 ## User guide
 The full manual (every page, every setting with its default, manual trading, brakes, keys,
-troubleshooting, glossary) is `docs/IT45_User_Guide.pdf` (22 pages), also kept as the editable **IT45 User Guide** doc in
+troubleshooting, glossary) is `docs/IT45_User_Guide.pdf` (23 pages), also kept as the editable **IT45 User Guide** doc in
 the INTELLIGENT TRADER project on claude.ai. The hover help below is its short form inside the app.
 
 ## Hover help
@@ -75,6 +75,7 @@ are audited. No mainnet until M3.
 - **M2.x (this build)**: real testnet connectors for **Bulk** (verified live end to end) and
   **Meridian** (signing verified live), setup scripts for both, `scripts/testnet_smoke.py`.
 - **Streams**: live websocket top of book + trade prints on all five venues for the markets in play; paper maker fills follow a queue model (docs/04).
+- **Outages**: 10 s request limits, orders sent without a reply are reconciled with the venue, outage banners (docs/05).
 - **Manual trading**: order ticket, hedged pairs, close and cancel from the dashboard.
 - Next: Arcus and Reya connectors once a testnet is available; M3 mainnet arming.
 - **M3**: mainnet arming per venue, Telegram / email / Windows alerts, VPS packaging (Docker).
@@ -92,7 +93,7 @@ it45/            Python package (FastAPI backend)
   web/           built dashboard (committed, so Node is not needed to run)
 frontend/        React + Vite source of the dashboard
 tests/           pytest
-docs/            00 spec, 01 venue APIs, 02 paper model, 03 keys + testnet setup, 04 streams
+docs/            00 spec, 01 venue APIs, 02 paper model, 03 keys + testnet setup, 04 streams, 05 outages, user guide PDF
 scripts/         testnet wallet/signer setup, testnet smoke test
 data/            it45.db, settings.json (created at runtime, git-ignored)
 ```

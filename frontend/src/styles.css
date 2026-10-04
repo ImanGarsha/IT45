@@ -238,3 +238,9 @@ input[type="number"] { width: 110px; text-align: right; font-family: var(--font-
 .review.sell { border-left-color: var(--neg); }
 .review p { margin: 0 0 6px; }
 .ticket input:not([type]), .form input:not([type]) { width: 140px; text-transform: uppercase; }
+
+/* ---- outage banner ---- */
+.offline { margin: 12px 24px 0; padding: 9px 14px; border-radius: var(--radius); border: 1px solid; font-size: 13.5px; }
+.offline.bad { border-color: var(--neg); background: rgb(var(--neg-rgb) / .12); }
+.offline.warn { border-color: var(--warn); background: var(--brass-soft); }
+.offline code { font-size: 12.5px; }

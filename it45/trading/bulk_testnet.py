@@ -22,7 +22,7 @@ import time
 import httpx
 
 from ..venues.base import norm_symbol
-from .brokers import Ack, Book, Broker, Position
+from .brokers import no_reply, REQUEST_TIMEOUT_S, Ack, Book, Broker, Position
 from .db import new_id
 
 TESTNET_URL = "https://exchange-api.bulk.trade/api/v1"
@@ -50,7 +50,7 @@ class BulkTestnet(Broker):
             signer = BulkSigner(key, "testnet")
         self.signer = signer
         self.acct_pk = account or (env.get("IT45_BULK_ACCOUNT") or "").strip() or signer.pubkey
-        self.http = client or httpx.Client(timeout=15)
+        self.http = client or httpx.Client(timeout=REQUEST_TIMEOUT_S)
         info = self._get("/exchangeInfo")
         self.markets = {norm_symbol(m["symbol"]): m for m in info}
         self.books: dict[str, Book] = {}
@@ -139,14 +139,19 @@ class BulkTestnet(Broker):
         await self._run(self._ensure_leverage, m["symbol"])
         order = {"type": "order", "symbol": m["symbol"], "is_buy": side == "buy", "price": px, "size": sz,
                  "reduce_only": reduce_only, "order_type": {"type": "limit", "tif": "ALO" if post_only else "IOC"}}
+        tx = self.signer.sign(order)
+        void = tx.get("order_id")
         try:
-            tx = self.signer.sign(order)
             res = await self._run(self._send, tx)
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
+            if no_reply(e):     # may have reached Bulk: keep its id so reconcile() can ask
+                self.voids[oid], self.syms[oid] = void, m["symbol"]
+                self._record(oid, symbol, side, sz, px, post_only, reduce_only, pair_id, "unknown",
+                             f"no reply from Bulk ({msg})", void)
+                return Ack(oid, "unknown", error=f"no reply from Bulk ({msg})")
             self._record(oid, symbol, side, sz, px, post_only, reduce_only, pair_id, "rejected", msg)
             return Ack(oid, "rejected", error=msg)
-        void = tx.get("order_id")
         ack = self._parse(oid, res, void)
         self.voids[oid], self.syms[oid] = void, m["symbol"]
         self._record(oid, symbol, side, sz, px, post_only, reduce_only, pair_id, ack.status, ack.error, void)
@@ -210,6 +215,17 @@ class BulkTestnet(Broker):
             except Exception:
                 pass
         return await self.status(order_id)
+
+    async def reconcile(self, order_id):
+        """An order sent without a reply: ask Bulk what became of it; cancel it if it rests."""
+        row = self.db.q("SELECT venue_order_id, symbol FROM orders WHERE id=?", (order_id,))
+        if row and row[0]["venue_order_id"] and order_id not in self.voids:
+            self.voids[order_id] = row[0]["venue_order_id"]
+            self.syms[order_id] = self._mkt(row[0]["symbol"], "perp")["symbol"]
+        a = await self.status(order_id)
+        if a.status == "open":
+            a = await self.cancel(order_id)
+        return a
 
     async def cancel_all(self):
         oo = await self._run(self._account_q, "openOrders")

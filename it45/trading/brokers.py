@@ -29,10 +29,29 @@ class Book:
     ts: float
 
 
+REQUEST_TIMEOUT_S = 10.0     # every venue request: fail cleanly instead of hanging on a dead link
+
+
+def no_reply(e: BaseException) -> bool:
+    """True when an order MAY have reached the venue but no answer came back (read timeout,
+    connection dropped mid-request). False when it certainly was not sent (could not connect,
+    name lookup failed) or the venue answered with an error. Such orders are recorded as
+    'unknown' and reconciled with the venue once it answers again."""
+    names = {c.__name__ for c in type(e).__mro__}
+    if names & {"ConnectError", "ConnectTimeout", "gaierror", "NameResolutionError"}:
+        return False          # never left this computer
+    if names & {"HTTPStatusError"}:
+        return False          # the venue answered
+    return bool(names & {"TimeoutException", "ReadTimeout", "WriteTimeout", "PoolTimeout", "TransportError",
+                         "RemoteProtocolError", "ReadError", "WriteError", "ConnectionError", "Timeout",
+                         "ChunkedEncodingError", "TimeoutError", "ConnectionResetError", "BrokenPipeError",
+                         "IncompleteRead", "ProtocolError"})
+
+
 @dataclass
 class Ack:
     order_id: str
-    status: str               # open | filled | canceled | rejected
+    status: str               # open | filled | canceled | rejected | unknown (sent, no reply)
     filled: float = 0.0
     avg_px: float | None = None
     fee: float = 0.0

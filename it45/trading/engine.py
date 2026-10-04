@@ -147,8 +147,30 @@ class Engine:
         for s in self.strategies.values():
             self._spawn(s.evaluate())
 
+    async def _reconcile_unknown(self):
+        """Orders sent without a reply ('unknown'): once the venue answers again, ask it what became
+        of each one. A resting one is cancelled (nobody is managing it), a fill is booked; the
+        positions themselves are read from the venue, so the imbalance brake repairs any pair."""
+        for o in self.db.q("SELECT id, venue FROM orders WHERE status='unknown' ORDER BY ts LIMIT 20"):
+            br = self.brokers.get(o["venue"])
+            if br is None or not hasattr(br, "reconcile"):
+                continue
+            if self.feed.age(o["venue"]) > float(self.cfg()["brakes"]["stale_s"]):
+                continue          # venue still unreachable: try again next cycle
+            try:
+                a = await br.reconcile(o["id"])
+            except Exception as ex:
+                self.db.audit("reconcile_retry", o["venue"], "", False, {"order": o["id"], "error": repr(ex)})
+                continue
+            if a.status != "unknown":
+                self.db.audit("order_reconciled", o["venue"], "", True,
+                              {"order": o["id"], "status": a.status, "filled": a.filled})
+                self.store.log("warn", o["venue"], f"order {o['id']} sent without a reply was found {a.status}"
+                         + (f", {a.filled:g} filled" if a.filled else "") + "; resting remainder cancelled")
+
     async def _refresh_live_orders(self):
         """Resting orders on a real (testnet) venue only change state there: poll them."""
+        await self._reconcile_unknown()
         for o in self.db.q("SELECT id, venue FROM orders WHERE status='open' AND mode='testnet' LIMIT 20"):
             br = self.brokers.get(o["venue"])
             if br is not None and br.mode == "testnet":
@@ -313,6 +335,7 @@ class Engine:
             "config": c,
             "halted": self.guard.halted,
             "daily_loss_hit": self.guard.daily_loss_hit,
+            "unknown_orders": self.db.q("SELECT COUNT(*) n FROM orders WHERE status='unknown'")[0]["n"],
             "risk": self.risk.state,
             "broker_errors": self.broker_errors,
             "brokers": {v: br.mode for v, br in self.brokers.items()},

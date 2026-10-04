@@ -4,7 +4,9 @@ open/close a pair = run both legs concurrently:
   for each leg, up to `maker_attempts` times: post-only at the touch (best bid for a buy,
   best ask for a sell), wait `reprice_s`, cancel, re-price. Remaining size then goes IOC at
   touch +/- max_slippage_bp if `taker_fallback`.
-  Once one leg is complete the other gets `imbalance_timeout_s` to finish before it is pushed
+  An order sent without a reply ('unknown') ends that leg at once: nothing more is sent until
+the engine has asked the venue what became of it (Engine._reconcile_unknown).
+Once one leg is complete the other gets `imbalance_timeout_s` to finish before it is pushed
   straight to IOC.
 After both legs: if filled notionals differ by more than imbalance_pct, the lighter leg gets
 one more IOC; if that fails the heavier leg is trimmed (reduce-only IOC) to match. A pair is
@@ -60,7 +62,7 @@ class Executor:
             return None, d.reason
         ack = await br.place(symbol=leg.symbol, kind=leg.kind, side=leg.side, size=size, price=price,
                              post_only=post_only, reduce_only=leg.reduce_only, pair_id=pair_id)
-        if ack.status == "rejected" and not (ack.error or "").startswith("post-only"):
+        if ack.status == "unknown" or (ack.status == "rejected" and not (ack.error or "").startswith("post-only")):
             self.e.api_error(leg.venue, ack.error)
         else:
             self.e.api_ok(leg.venue)
@@ -101,6 +103,11 @@ class Executor:
                 if ack is None:
                     res.error = err
                     return res                       # guard refused: do not fall back to taker
+                if ack.status == "unknown":
+                    # sent but no reply: the order may be live. Sending more could double the leg,
+                    # so stop here; the engine reconciles the order and the brakes the positions.
+                    res.error = ack.error
+                    return res
                 if ack.status == "rejected":
                     await asyncio.sleep(1.0)
                     continue

@@ -21,7 +21,7 @@ from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 import httpx
 
 from ..venues.base import norm_symbol
-from .brokers import Ack, Book, Broker, Position
+from .brokers import REQUEST_TIMEOUT_S, Ack, Book, Broker, Position, no_reply
 from .db import new_id
 
 TESTNET_URL = "https://api.meridiantest.net/v1"
@@ -74,7 +74,7 @@ class MeridianTestnet(Broker):
 
     def __init__(self, db, env, client=None, signer=None):
         self.db = db
-        self.http = client or httpx.Client(timeout=15)
+        self.http = client or httpx.Client(timeout=REQUEST_TIMEOUT_S)
         key = (env.get("IT45_MERIDIAN_SIGNER_KEY") or "").strip()
         self.owner = (env.get("IT45_MERIDIAN_ACCOUNT") or "").strip()
         self.sub_name = (env.get("IT45_MERIDIAN_SUBACCOUNT") or "primary").strip()
@@ -172,6 +172,11 @@ class MeridianTestnet(Broker):
             res = await self._run(self._post, "/order", body)
         except Exception as e:
             msg = str(e)
+            if no_reply(e):     # may have reached Meridian: reconcile() looks for it by nonce
+                d = body["data"]
+                err = f"no reply from Meridian ({type(e).__name__}); nonce {d['nonce']}"
+                self._record(oid, symbol, side, qty, px, post_only, reduce_only, pair_id, "unknown", err)
+                return Ack(oid, "unknown", error=err)
             if "post" in msg.lower() and ("cross" in msg.lower() or "match" in msg.lower()):
                 msg = "post-only would cross the book"
             self._record(oid, symbol, side, size, price, post_only, reduce_only, pair_id, "rejected", msg)
@@ -223,6 +228,42 @@ class MeridianTestnet(Broker):
                 pass
             await asyncio.sleep(1.0)    # cancels apply in the next execution block
         return await self.status(order_id)
+
+    async def reconcile(self, order_id, give_up_s: float = 600.0):
+        """An order sent without a reply: find it in the subaccount's orders by its signed nonce
+        (or, failing that, by product, side, price and size placed after it), then cancel it if
+        it rests. Not found after give_up_s: it never arrived."""
+        row = self.db.q("SELECT * FROM orders WHERE id=?", (order_id,))
+        if not row:
+            return Ack(order_id, "rejected", error="unknown order")
+        o = row[0]
+        if not o["venue_order_id"]:
+            import re
+            m = re.search(r"nonce (\d+)", o["error"] or "")
+            nonce = m.group(1) if m else None
+            d = await self._run(self._get, "/order", subaccountId=self.sub_id, limit=100)
+            pid = int(self._prod(o["symbol"], "perp")["onchainId"])
+            side = 0 if o["side"] == "buy" else 1
+            hit = None
+            for x in d.get("data", []):
+                if nonce and str(x.get("nonce")) == nonce:
+                    hit = x
+                    break
+                same = (int(x.get("onchainId", x.get("productId", -1)) or -1) == pid and int(x.get("side", -1)) == side
+                        and abs(float(x.get("price", 0)) - o["limit_px"]) < 1e-9
+                        and abs(float(x.get("quantity", 0)) - o["size"]) < 1e-9)
+                if same and hit is None:
+                    hit = x
+            if hit is None:
+                if time.time() - o["ts"] > give_up_s:
+                    self.db.update_order(order_id, status="canceled", error="no reply; Meridian has no such order")
+                    return Ack(order_id, "canceled")
+                return Ack(order_id, "unknown", error=o["error"])
+            self.db.update_order(order_id, venue_order_id=hit.get("id"))
+        a = await self.status(order_id)
+        if a.status == "open":
+            a = await self.cancel(order_id)
+        return a
 
     async def cancel_all(self):
         r = await self._run(self._post, "/order/cancel-all", self._cancel_body())
