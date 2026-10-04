@@ -9,7 +9,6 @@ from ..models import Quote
 
 # venue-specific aliases for the same underlying
 ALIASES = {
-    "HYPER": "HYPE",      # Reya lists HYPE as HYPERUSDPERP
     "UBTC": "BTC", "UETH": "ETH", "USOL": "SOL",  # Hyperliquid spot wrapped tokens
     "KBONK": "kBONK",
 }

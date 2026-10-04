@@ -12,9 +12,15 @@ from ..models import Quote, f
 from .base import Venue, norm_symbol
 
 
+# Reya-only aliases. HYPER must not be mapped globally: Hyperliquid lists HYPER as its own
+# token (Hyperlane), and a global alias merged it into HYPE.
+REYA_ALIASES = {"HYPER": "HYPE"}     # Reya lists HYPE as HYPERUSDPERP
+
+
 def reya_base(sym: str) -> str:
-    # BTCRUSDPERP -> BTC ; HYPERUSDPERP -> HYPER -> HYPE (alias)
-    return norm_symbol(re.sub(r"RUSDPERP$|USDPERP$", "", sym))
+    # BTCRUSDPERP -> BTC ; HYPERUSDPERP -> HYPER -> HYPE
+    b = re.sub(r"RUSDPERP$|USDPERP$", "", sym.upper())
+    return norm_symbol(REYA_ALIASES.get(b, b))
 
 
 class Reya(Venue):

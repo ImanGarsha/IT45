@@ -78,3 +78,11 @@ def test_hyperliquid_perp_and_usdc_spot():
             [{"coin": "@142", "midPx": "100", "markPx": "100", "dayNtlVlm": "5"}]],
     })
     assert {(q.symbol, q.kind) for q in qs} == {("BTC", "perp"), ("BTC", "spot")}
+
+
+def test_hyper_alias_is_reya_only():
+    from it45.venues.base import norm_symbol
+    from it45.venues.reya import reya_base
+    assert reya_base("HYPERUSDPERP") == "HYPE"
+    assert norm_symbol("HYPER") == "HYPER"      # Hyperliquid's HYPER is a different token
+    assert norm_symbol("HYPE") == "HYPE"

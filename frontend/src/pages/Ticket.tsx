@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Quote, usePoll, VENUE_LABEL, VENUE_ORDER } from "../api";
 import { bp, Notice, PageHead, pct, price, signCls, usd } from "../ui";
 import { TStatus, useTrading } from "./Trading";
@@ -19,6 +19,41 @@ async function post(url: string, body: unknown) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.detail ?? `${r.status}`);
   return j;
+}
+
+const compact = (x: number | null | undefined) => x == null ? "–" :
+  x >= 1e9 ? `$${(x / 1e9).toFixed(1)}B` : x >= 1e6 ? `$${(x / 1e6).toFixed(1)}M` : x >= 1e3 ? `$${(x / 1e3).toFixed(0)}k` : `$${x.toFixed(0)}`;
+
+/** Every tradable market of a kind on a venue, busiest first. */
+function useMarkets(venue: string, kind: string) {
+  const m = usePoll<Quote[]>(venue ? `/api/venues/${venue}/markets` : null, 30000);
+  return useMemo(() => {
+    const seen = new Set<string>();     // one row per symbol (the busiest), so the choice is unambiguous
+    return (m.data ?? []).filter((q) => q.kind === kind && q.status === "trading")
+      .sort((a, b) => (b.volume_24h_usd ?? 0) - (a.volume_24h_usd ?? 0))
+      .filter((q) => !seen.has(q.symbol) && !!seen.add(q.symbol));
+  }, [m.data, kind]);
+}
+
+/** Dropdown of markets with a search box that narrows it. Keeps the choice valid when the list changes. */
+function MarketPicker({ label, markets, value, onChange }:
+  { label: string; markets: Quote[]; value: string; onChange: (s: string) => void }) {
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    if (markets.length && !markets.some((m) => m.symbol === value)) onChange(markets[0].symbol);
+  }, [markets, value, onChange]);
+  const shown = markets.filter((m) => !q || m.symbol.includes(q.toUpperCase()) || m.symbol === value);
+  return (
+    <label data-help={`Pick the market to trade. ${markets.length} tradable here, busiest first; type in the search box to narrow the list.`}>
+      <span>{label} <span className="muted small">({markets.length})</span></span>
+      <span className="amount">
+        <input type="search" placeholder="Search" aria-label="Search markets" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 100 }} />
+        <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+          {shown.map((m) => <option key={m.symbol} value={m.symbol}>{m.symbol}  {price(m.mid ?? m.px)}  vol {compact(m.volume_24h_usd)}</option>)}
+        </select>
+      </span>
+    </label>
+  );
 }
 
 function liveVenues(st: TStatus | null) {
@@ -43,9 +78,8 @@ function OrderTicket({ st }: { st: TStatus | null }) {
   useEffect(() => { if (!venue && venues.length) setVenue(venues[0]); }, [venues, venue]);
   useEffect(() => { if (venue !== "hyperliquid") setKind("perp"); }, [venue]);
 
-  const markets = usePoll<Quote[]>(venue ? `/api/venues/${venue}/markets` : null, 30000);
-  const symbols = useMemo(() => (markets.data ?? []).filter((q) => q.kind === kind && q.status === "trading")
-    .sort((a, b) => (b.volume_24h_usd ?? 0) - (a.volume_24h_usd ?? 0)).map((q) => q.symbol), [markets.data, kind]);
+  const markets = useMarkets(venue, kind);
+  const pick = useCallback((s: string) => { setSymbol(s); setReview(false); }, []);
   const tk = usePoll<Ticket>(venue && symbol ? `/api/trading/ticket?venue=${venue}&symbol=${encodeURIComponent(symbol)}&kind=${kind}` : null, 2000);
   const t = tk.data;
   const mid = t?.book?.mid ?? 0;
@@ -95,15 +129,13 @@ function OrderTicket({ st }: { st: TStatus | null }) {
             <select value={venue} onChange={(e) => { setVenue(e.target.value); setReview(false); }}>
               {venues.map((v) => <option key={v} value={v}>{V(v)} ({st!.config.venue_modes[v]})</option>)}
             </select></label>
-          <label><span>Market</span>
-            <input list="ticket-symbols" value={symbol} onChange={(e) => { setSymbol(e.target.value.toUpperCase()); setReview(false); }} />
-            <datalist id="ticket-symbols">{symbols.map((s) => <option key={s} value={s} />)}</datalist></label>
           {venue === "hyperliquid" && (
             <div className="field-row"><span>Market type</span>
               <div className="seg" role="group" aria-label="Market type">
                 <button type="button" aria-pressed={kind === "perp"} onClick={() => setKind("perp")}>Perp</button>
                 <button type="button" aria-pressed={kind === "spot"} onClick={() => setKind("spot")}>Spot</button>
               </div></div>)}
+          <MarketPicker key={venue + kind} label="Market" markets={markets} value={symbol} onChange={pick} />
           <div className="field-row"><span>Side</span>
             <div className="seg seg-side" role="group" aria-label="Side">
               <button type="button" className="buy" aria-pressed={side === "buy"} onClick={() => { setSide("buy"); setReview(false); }}>Buy / long</button>
@@ -189,8 +221,12 @@ function PairTicket({ st }: { st: TStatus | null }) {
     if (!shortV && venues.length > 1) setShortV(venues[1]);
   }, [venues, longV, shortV]);
   useEffect(() => { if (longV !== "hyperliquid") setLongKind("perp"); }, [longV]);
+  const longM = useMarkets(longV, longKind);
+  const shortM = useMarkets(shortV, "perp");
+  const both = useMemo(() => { const sh = new Set(shortM.map((m) => m.symbol)); return longM.filter((m) => sh.has(m.symbol)); }, [longM, shortM]);
+  const pick = useCallback((s: string) => { setSymbol(s); setReview(false); }, []);
   const same = longV === shortV && longKind === "perp";
-  const problems = [!symbol && "enter an asset", same && "long and short legs must be on different venues (or spot vs perp on Hyperliquid)",
+  const problems = [(!symbol || !both.length) && "pick an asset listed on both venues", same && "long and short legs must be on different venues (or spot vs perp on Hyperliquid)",
     !(+amount > 0) && "enter a size per leg", st?.config.kill_switch && "kill switch is on"].filter(Boolean) as string[];
   const open = async () => {
     setBusy(true);
@@ -209,7 +245,6 @@ function PairTicket({ st }: { st: TStatus | null }) {
       <div className="panel-head"><h2>Hedged pair</h2></div>
       <p className="muted small">Buys one leg and sells the other at the same size, maker first, then crossing the spread. The pair appears under Positions, where the imbalance and liquidation brakes watch it and Close shuts both legs.</p>
       <form className="form" onSubmit={(e) => { e.preventDefault(); if (!problems.length) setReview(true); }}>
-        <label><span>Asset</span><input value={symbol} onChange={(e) => { setSymbol(e.target.value.toUpperCase()); setReview(false); }} /></label>
         <label><span>Long venue</span>
           <select value={longV} onChange={(e) => { setLongV(e.target.value); setReview(false); }}>
             {venues.map((v) => <option key={v} value={v}>{V(v)}</option>)}</select></label>
@@ -222,6 +257,8 @@ function PairTicket({ st }: { st: TStatus | null }) {
         <label><span>Short venue</span>
           <select value={shortV} onChange={(e) => { setShortV(e.target.value); setReview(false); }}>
             {venues.map((v) => <option key={v} value={v}>{V(v)}</option>)}</select></label>
+        {both.length ? <MarketPicker key={longV + longKind + shortV} label="Asset on both venues" markets={both} value={symbol} onChange={pick} />
+          : <p className="muted small">These two venues list no common asset{longKind === "spot" ? " as spot vs perp" : ""}. Pick another pair of venues.</p>}
         <label><span>USD per leg</span><input type="number" min={0} step="any" value={amount} onChange={(e) => { setAmount(e.target.value); setReview(false); }} /></label>
         {problems.length > 0 && <p className="muted small">{problems[0]}</p>}
         {!review ? <div><button type="submit" className="btn" disabled={problems.length > 0}>Review pair</button></div>
