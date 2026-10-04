@@ -30,8 +30,8 @@ If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser Re
 
 ## User guide
 The full manual (every page, every setting with its default, manual trading, brakes, keys,
-troubleshooting, glossary) is the **IT45 User Guide** doc in the INTELLIGENT TRADER project on
-claude.ai. The hover help below is its short form inside the app.
+troubleshooting, glossary) is `docs/IT45_User_Guide.pdf` (22 pages), also kept as the editable **IT45 User Guide** doc in
+the INTELLIGENT TRADER project on claude.ai. The hover help below is its short form inside the app.
 
 ## Hover help
 Rest the pointer on anything (menu item, column header, number, button, setting) for half a
