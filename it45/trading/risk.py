@@ -5,6 +5,8 @@
 3. hedge imbalance         -> a pair whose legs differ by more than imbalance_pct for longer
                               than imbalance_timeout_s is repaired (lone leg: closed)
 4. liquidation distance    -> a leg closer than min_liq_distance to liquidation: pair halved
+None of 2-4 acts on a venue that is unreachable or reconnected less than Engine.SETTLE_S ago:
+an outage is never read as a loss, a lone leg or a broken hedge.
 Also retries closing any pair stuck in 'closing'.
 """
 from __future__ import annotations
@@ -29,6 +31,8 @@ class Risk:
             return
         self.busy = True
         try:
+            await self.e.retry_unavailable()
+            await self.e.probe_venues()
             self.e.last_positions = await self.e.all_positions()
             await self._stale()
             await self._daily_loss()
@@ -57,6 +61,13 @@ class Risk:
     # 2 -----------------------------------------------------------------------
     async def _daily_loss(self):
         today = datetime.now(timezone.utc).date()
+        if not self.e.equity_trustworthy():
+            # an outage is not a loss: equity cannot be measured while an account cannot be read
+            self.state = {**self.state, "paused": "account not readable: " + ", ".join(
+                sorted(v for v, w in self.e.unreachable.items() if not w.startswith("no fresh"))
+                or ["just reconnected"])}
+            return
+        self.state.pop("paused", None)
         eq = await self.e.total_equity()
         if eq is None:
             return
@@ -77,6 +88,11 @@ class Risk:
     async def _pairs(self):
         b = self.e.cfg()["brakes"]
         for p in self.e.db.open_pairs():
+            if not (self.e.settled(p["long_venue"]) and self.e.settled(p["short_venue"])):
+                # positions on an unreachable venue are unknown, not gone: leave the pair alone and
+                # restart its imbalance clock once both venues are back
+                self.imbalance_since.pop(p["id"], None)
+                continue
             lp = await self.e.position(p["long_venue"], p["symbol"], p["long_kind"])
             sp = await self.e.position(p["short_venue"], p["symbol"], "perp")
             ln = lp.notional if lp and lp.size > 0 else 0.0

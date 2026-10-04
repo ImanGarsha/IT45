@@ -19,7 +19,8 @@ export type TCfg = {
 };
 export type TStatus = {
   config: TCfg; halted: Record<string, string>; daily_loss_hit: boolean; unknown_orders: number;
-  risk: { day?: string; day_start_equity?: number; equity?: number; pnl_today?: number; limit?: number };
+  unreachable: Record<string, string>; settling: string[];
+  risk: { day?: string; day_start_equity?: number; equity?: number; pnl_today?: number; limit?: number; paused?: string };
   broker_errors: Record<string, string>; brokers: Record<string, string>;
   strategies: Record<string, { enabled: boolean; note: string; last_eval: number }>;
   keys: Record<string, boolean>; testnet_capable: string[];
@@ -395,12 +396,20 @@ export function BrakesPage() {
       <div className="stats">
         <Stat label="P&L today (UTC)" value={<span className={signCls(r.pnl_today)}>{usd(r.pnl_today)}</span>} hint={`limit ${usd(r.limit)}`} />
         <Stat label="Halted venues" value={Object.keys(t.data.halted).length} hint={Object.keys(t.data.halted).map(V).join(", ") || "none"} />
-        <Stat label="Daily loss brake" value={t.data.daily_loss_hit ? "Tripped" : "Armed"} />
+        <Stat label="Daily loss brake" value={t.data.daily_loss_hit ? "Tripped" : r.paused ? "On hold" : "Armed"} hint={r.paused} />
       </div>
+      {(Object.keys(t.data.unreachable).length > 0 || t.data.settling.length > 0) && (
+        <Notice kind="warn">
+          <span data-help="While a venue cannot be reached, and for 60 seconds after it comes back, no brake or strategy exit acts on a pair with a leg there. The daily-loss check pauses only while an account balance cannot be read. An outage is never read as a loss or a missing leg, so it can neither engage the kill switch nor close positions.">
+            <b>Brakes on hold for pairs on {[...Object.keys(t.data.unreachable), ...t.data.settling].map(V).join(", ")}.</b>{" "}
+            {Object.entries(t.data.unreachable).map(([v, why]) => `${V(v)}: ${why}. `).join("")}
+            {t.data.settling.length > 0 && `${t.data.settling.map(V).join(", ")}: back, settling for 60 s. `}
+            Open positions stay as they are; the kill switch is not touched.</span>
+        </Notice>)}
       {Object.entries(t.data.halted).map(([v, why]) => (
         <Notice key={v} kind="warn">
           <span className="cell-flex"><Dot ok={false} /> <b>{V(v)}</b> halted: {why}.</span>{" "}
-          <button className="btn-small" onClick={() => a.run(`${V(v)} resumed.`, () => call("POST", `/api/trading/venues/${v}/resume`), t.reload)}>Resume {V(v)}</button>
+          <button className="btn-small" data-help="Clear this halt and allow new orders on the venue again. A stale-feed halt clears by itself once prices are fresh; an order-error halt needs this button after you have fixed the cause." onClick={() => a.run(`${V(v)} resumed.`, () => call("POST", `/api/trading/venues/${v}/resume`), t.reload)}>Resume {V(v)}</button>
         </Notice>
       ))}
       <form className="form" onSubmit={(e) => { e.preventDefault(); a.run("Brakes saved.", () => saveCfg({ brakes: f }), () => { t.reload(); setF(null); }); }}>

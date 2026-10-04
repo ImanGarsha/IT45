@@ -172,3 +172,116 @@ def test_leg_stops_after_no_reply_and_engine_reconciles_when_back(eng):  # noqa:
     assert nb.reconciled == ["X-1"]
     assert e.db.q("SELECT status FROM orders WHERE id='X-1'")[0]["status"] == "canceled"
     assert e.db.q("SELECT COUNT(*) n FROM audit WHERE event='order_reconciled'")[0]["n"] == 1
+
+
+# ------------------------------------------------------------------ outage must not close anything
+class DownBroker:
+    """A venue connector while the network is down: every call fails."""
+
+    def __init__(self, inner):
+        self.inner, self.down = inner, True
+        self.mode, self.venue = inner.mode, inner.venue
+
+    def __getattr__(self, k):
+        return getattr(self.inner, k)
+
+    async def positions(self):
+        if self.down:
+            raise httpx.ConnectError("offline")
+        return await self.inner.positions()
+
+    async def account(self):
+        if self.down:
+            raise httpx.ConnectError("offline")
+        return await self.inner.account()
+
+    async def place(self, **k):
+        if self.down:
+            raise AssertionError("no order may be sent to an unreachable venue")
+        return await self.inner.place(**k)
+
+
+def _open_pair(e, feed):
+    from it45.trading.db import new_id
+    feed.set("bulk", "BTC", 100.0)
+    feed.set("reya", "BTC", 100.0)
+    run(e.executor.ioc(Leg("bulk", "BTC", "perp", "buy", 1.0), None))
+    run(e.executor.ioc(Leg("reya", "BTC", "perp", "sell", 1.0), None))
+    pid = new_id("pair")
+    e.db.insert_pair({"id": pid, "strategy": "funding_arb", "symbol": "BTC", "long_venue": "bulk",
+                      "long_kind": "perp", "short_venue": "reya", "short_kind": "perp", "target_usd": 100,
+                      "status": "open", "opened_ts": 0, "entry_edge_apr": 0.3, "entry_basis_bp": 0.0, "notes": ""})
+    return pid
+
+
+def test_outage_never_trips_kill_switch_or_closes_positions(eng):  # noqa: F811
+    e, feed, _ = eng
+    e.update_cfg({"strategies": {"funding_arb": {"max_hold_h": 1}}})   # pair is overdue: would exit
+    pid = _open_pair(e, feed)
+    run(e.risk.run())                                   # healthy pass sets the day's start equity
+    start = e.risk.day_start_equity
+    assert start and not e.cfg()["kill_switch"]
+    # the network drops: Reya's account and positions cannot be read, its prices go stale
+    down = DownBroker(e.brokers["reya"])
+    e.brokers["reya"] = down
+    feed.ages["reya"] = 999
+    for _ in range(3):
+        run(e.risk.run())
+        e.strategies["funding_arb"].last_eval = 0
+        run(e.strategies["funding_arb"]._exits())
+    assert not e.cfg()["kill_switch"], "an outage must never look like a daily loss"
+    assert not e.guard.daily_loss_hit
+    assert e.db.q("SELECT status FROM pairs WHERE id=?", (pid,))[0]["status"] == "open"
+    assert run(e.position("bulk", "BTC", "perp")).size == pytest.approx(1.0)   # long leg untouched
+    assert "reya" in e.unreachable and "account not readable" in e.risk.state["paused"]
+    assert run(e.total_equity()) is None              # never a partial sum
+    # back online, but inside the settle period: still hands off
+    down.down, feed.ages["reya"] = False, 1
+    run(e.risk.run())
+    assert "reya" not in e.unreachable and not e.settled("reya")
+    run(e.strategies["funding_arb"]._exits())
+    assert e.db.q("SELECT status FROM pairs WHERE id=?", (pid,))[0]["status"] == "open"
+    # settled: normal rules apply again (the overdue pair is closed by its max-hold exit)
+    e.last_unreachable["reya"] -= e.SETTLE_S + 1
+    assert e.settled("reya")
+    run(e.strategies["funding_arb"]._exits())
+    assert e.db.q("SELECT status FROM pairs WHERE id=?", (pid,))[0]["status"] in ("closing", "closed")
+    assert not e.cfg()["kill_switch"]
+
+
+def test_unavailable_connector_is_not_read_as_flat(eng):  # noqa: F811
+    from it45.trading.engine import Unavailable
+    e, feed, _ = eng
+    pid = _open_pair(e, feed)
+    e.brokers["reya"] = Unavailable("reya", "testnet", "started offline")
+    with pytest.raises(RuntimeError):
+        run(e.brokers["reya"].positions())
+    for _ in range(3):
+        run(e.risk.run())
+    assert e.db.q("SELECT status FROM pairs WHERE id=?", (pid,))[0]["status"] == "open"
+    assert run(e.position("bulk", "BTC", "perp")).size == pytest.approx(1.0)
+
+
+def test_real_loss_still_trips_daily_brake(eng):  # noqa: F811
+    e, feed, _ = eng
+    e.update_cfg({"caps": {"max_order_usd": 2000, "max_venue_usd": 2000}})
+    feed.set("bulk", "BTC", 100.0)
+    assert run(e.executor.ioc(Leg("bulk", "BTC", "perp", "buy", 10.0), None)).filled == 10.0
+    run(e.risk.run())
+    feed.set("bulk", "BTC", 85.0)                      # -$150 on $5,000 capital: beyond 3 %
+    run(e.risk.run())
+    assert e.guard.daily_loss_hit and e.cfg()["kill_switch"]
+
+
+def test_stale_prices_alone_keep_daily_brake_armed(eng):  # noqa: F811
+    e, feed, _ = eng
+    e.update_cfg({"caps": {"max_order_usd": 2000, "max_venue_usd": 2000}})
+    feed.set("bulk", "BTC", 100.0)
+    feed.set("arcus", "BTC", 100.0)
+    run(e.executor.ioc(Leg("bulk", "BTC", "perp", "buy", 10.0), None))
+    run(e.risk.run())
+    feed.ages["reya"] = 999                    # one venue's public API is down; accounts all readable
+    feed.set("bulk", "BTC", 85.0)              # a real loss elsewhere
+    run(e.risk.run())
+    assert "reya" in e.unreachable
+    assert e.guard.daily_loss_hit, "a venue outage must not switch off protection against real losses"

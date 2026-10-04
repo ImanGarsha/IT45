@@ -8,8 +8,28 @@ network namespace with no connectivity and by unit tests (`tests/test_network_ou
 |---|---|
 | First seconds | REST polls fail; websocket streams retry with backoff 1, 2, 4 … 60 s. The dashboard keeps the last data. |
 | After `stale_s` (30 s) | The venue is halted ("no market feed"). The guard refuses every order on a book older than 30 s, closing orders included, because it cannot price them. Strategies open nothing. |
-| During | Positions stay on the venues. A hedged pair is price-neutral; the risks are a leg's liquidation in a long outage with a very large move, or the legs diverging. The kill switch cannot reach venues either. |
+| During | **No kill switch, no closing.** Positions stay on the venues. A hedged pair is price-neutral; the risks are a leg's liquidation in a long outage with a very large move, or the legs diverging. The kill switch cannot reach venues either. |
 | Back | Feeds refresh, the stale halt lifts, brakes read real positions from the venues and repair any one-sided pair, strategies resume. Only an order-error halt (3 in a row) needs Resume on Risk → Brakes. |
+
+## An outage never engages the kill switch or closes positions
+(PI requirement, 2026-10-04.) Every risk pass `Engine.probe_venues` reads each traded venue's
+account and positions and checks its price age:
+
+- a pair with a leg on a venue that is unreachable, or reconnected less than `SETTLE_S` (60 s)
+  ago, is skipped by the imbalance and liquidation brakes and by the strategy exits, and its
+  imbalance clock restarts afterwards: missing data is never read as a missing leg;
+- the daily-loss check pauses only while an **account cannot be read** (or could not less than
+  60 s ago); `total_equity` returns None rather than a partial sum, which would look like a loss
+  of the missing balance. Stale prices alone keep the brake armed: positions are valued at the
+  last price, which cannot invent a loss, so protection against real losses elsewhere stays on;
+- a testnet connector that failed to start (IT45 started offline) refuses `positions()` instead of
+  returning an empty list, and is rebuilt every 60 s until it starts.
+
+Only a real loss, measured with every account readable, can trip the daily-loss brake; the kill
+switch is otherwise engaged only by you. Verified live: a paper pair (Hyperliquid long, Arcus short)
+survived 2¼ minutes with no network and a restart, kill switch off, both legs intact; and a real
+Bulk API outage (HTTP 502) on 2026-10-04 left the pair untouched while the daily-loss brake stayed
+armed. Tests: `tests/test_network_outage.py`.
 
 ## Requests time out after 10 s
 `REQUEST_TIMEOUT_S` in `trading/brokers.py`, used by all testnet connectors (the Hyperliquid SDK

@@ -215,7 +215,7 @@ const RAW: Record<string, string> = {
   // ---------------------------------------------------------------- brakes
   "p&l today (utc)": "Change in total equity since 00:00 UTC. The daily loss brake compares this with its limit.",
   "halted venues": "Venues where new orders are blocked: stale feed or repeated order errors. Closing orders still pass.",
-  "daily loss brake": "Armed: watching. Tripped: the limit was hit today; everything was closed and only closing orders pass until 00:00 UTC.",
+  "daily loss brake": "Armed: watching. On hold: an account balance cannot be read (or could not less than 60 s ago), so equity cannot be measured; an outage is never counted as a loss. Tripped: the limit was hit today; everything was closed and only closing orders pass until 00:00 UTC.",
   "daily loss limit (% of starting capital)": "Loss today that closes everything, engages the kill switch and stops the strategies.",
   "hedge imbalance tolerance (%)": "How far long and short notional of a pair may differ before it is repaired.",
   "lone-leg timeout (seconds)": "How long a pair may stay unbalanced before the heavier leg is trimmed or a lone leg closed.",

@@ -45,7 +45,9 @@ class Unavailable:
         return 0
 
     async def positions(self):
-        return []
+        # NOT []: an empty list would read as "the legs are gone" and make the brakes close the
+        # other leg of every pair on this venue. Unknown positions must stay unknown.
+        raise RuntimeError(f"connector unavailable: {self.why}")
 
     async def account(self):
         return {"venue": self.venue, "mode": self.mode, "error": self.why}
@@ -70,6 +72,13 @@ class Engine:
         self.brokers: dict = {}
         self.broker_errors: dict[str, str] = {}
         self.api_errors: dict[str, int] = {}
+        # connectivity: a venue is "settled" when its prices are fresh, its connector answers, and
+        # it has been so for SETTLE_S. Brakes, exits and the daily-loss check never act on a venue
+        # that is not settled, so an outage can neither trip the kill switch nor close positions.
+        self.unreachable: dict[str, str] = {}       # venue -> why, right now
+        self.last_unreachable: dict[str, float] = {}
+        self.last_unreadable: dict[str, float] = {}  # account/positions could not be read
+        self._last_rebuild = 0.0
         self._last_cycle = time.time()
         self._tasks: set[asyncio.Task] = set()
         for v in feed.venues:
@@ -240,6 +249,71 @@ class Engine:
                 return p
         return None
 
+    SETTLE_S = 60.0
+
+    async def probe_venues(self):
+        """Once per risk pass: which traded venues can be trusted right now."""
+        now = time.time()
+        stale_s = float(self.cfg()["brakes"]["stale_s"])
+        bad: dict[str, str] = {}
+        for v, br in self.brokers.items():
+            if self.cfg()["venue_modes"].get(v, "off") == "off":
+                continue
+            if isinstance(br, Unavailable):
+                bad[v] = f"connector unavailable: {br.why}"
+                continue
+            try:
+                await br.positions()
+                acc = await br.account()
+                if acc.get("equity") is None:
+                    bad[v] = f"account not readable: {acc.get('error') or 'no equity'}"
+            except Exception as ex:
+                bad[v] = f"account not readable: {type(ex).__name__}"
+            if v not in bad and self.feed.age(v) > stale_s:
+                bad[v] = "no fresh prices"
+        for v, why in bad.items():
+            if why.startswith(("connector unavailable", "account not readable")):
+                self.last_unreadable[v] = now
+            if v not in self.unreachable:
+                self.store.log("warn", v, f"unreachable ({why}): brakes, exits and the daily-loss check "
+                                          "leave its positions alone until it is back")
+            self.last_unreachable[v] = now
+        for v in list(self.unreachable):
+            if v not in bad:
+                self.store.log("info", v, f"reachable again; brakes resume after {self.SETTLE_S:.0f} s")
+        self.unreachable = bad
+
+    def settled(self, venue: str) -> bool:
+        """Reachable now, and for at least SETTLE_S (positions and prices have caught up)."""
+        if venue in self.unreachable:
+            return False
+        return time.time() - self.last_unreachable.get(venue, 0.0) >= self.SETTLE_S
+
+    def equity_trustworthy(self) -> bool:
+        """Every traded account can be read, and has been for SETTLE_S. Stale prices alone are fine:
+        positions are then valued at the last price, which cannot invent a loss."""
+        now = time.time()
+        for v, m in self.cfg()["venue_modes"].items():
+            if m == "off":
+                continue
+            why = self.unreachable.get(v, "")
+            if why.startswith(("connector unavailable", "account not readable")):
+                return False
+            if now - self.last_unreadable.get(v, 0.0) < self.SETTLE_S:
+                return False
+        return True
+
+    async def retry_unavailable(self, every_s: float = 60.0):
+        """A testnet connector that failed to start (e.g. IT45 started offline) is retried."""
+        if time.time() - self._last_rebuild < every_s:
+            return
+        self._last_rebuild = time.time()
+        for v, br in list(self.brokers.items()):
+            if isinstance(br, Unavailable) and self.cfg()["venue_modes"].get(v) == "testnet":
+                self._build_broker(v)
+                if not isinstance(self.brokers[v], Unavailable):
+                    self.store.log("info", v, "testnet connector started on retry")
+
     async def all_positions(self) -> list[Position]:
         out = []
         for v, br in self.brokers.items():
@@ -271,8 +345,12 @@ class Engine:
         return out
 
     async def total_equity(self) -> float | None:
-        acc = [a for a in await self.accounts() if a.get("equity") is not None]
-        return sum(a["equity"] for a in acc) if acc else None
+        """Sum over traded venues, or None if ANY of them cannot be read: a venue missing from the
+        sum would look like a loss of its whole balance."""
+        acc = [a for a in await self.accounts() if a.get("mode") != "off"]
+        if not acc or any(a.get("equity") is None for a in acc):
+            return None
+        return sum(a["equity"] for a in acc)
 
     async def total_start_capital(self) -> float:
         acc = await self.accounts()
@@ -335,6 +413,9 @@ class Engine:
             "config": c,
             "halted": self.guard.halted,
             "daily_loss_hit": self.guard.daily_loss_hit,
+            "unreachable": self.unreachable,
+            "settling": sorted(v for v, m in c["venue_modes"].items()
+                               if m != "off" and v not in self.unreachable and not self.settled(v)),
             "unknown_orders": self.db.q("SELECT COUNT(*) n FROM orders WHERE status='unknown'")[0]["n"],
             "risk": self.risk.state,
             "broker_errors": self.broker_errors,

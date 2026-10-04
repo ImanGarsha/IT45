@@ -148,6 +148,8 @@ class PairStrategy:
         for p in self.e.db.open_pairs():
             if p["strategy"] != self.name or p["status"] != "open":
                 continue
+            if not (self.e.settled(p["long_venue"]) and self.e.settled(p["short_venue"])):
+                continue          # never exit on stale or missing data during an outage
             reason = None
             per = persistence(self.e.store, p["symbol"], p["long_venue"], p["long_kind"],
                               p["short_venue"], 1.0)
