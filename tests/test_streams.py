@@ -135,3 +135,24 @@ def test_inside_the_spread_has_no_queue(paper):
     assert paper.resting[a.order_id].queue_ahead == 0
     paper.on_trade(_trade(84700.4, 0.0001, taker_buy=True))
     assert asyncio.run(paper.status(a.order_id)).status == "filled"
+
+
+def test_websocket_handshake_noise_is_filtered(tmp_path):
+    import asyncio
+    from it45.store import Store
+    from it45.streams import quiet_websocket_handshake_noise
+    store = Store(tmp_path / "t.db")
+    loop = asyncio.new_event_loop()
+    seen = []
+    loop.default_exception_handler = lambda ctx: seen.append(ctx)
+    quiet_websocket_handshake_noise(loop, store)
+    h = loop.get_exception_handler()
+    noise = AttributeError("'ClientConnection' object has no attribute 'recv_messages'")
+    for _ in range(5):
+        h(loop, {"message": "Exception in callback", "exception": noise})
+    assert seen == []                                        # dropped
+    assert len([r for r in store.events(50) if r["source"] == "streams"]) == 1   # logged once
+    other = {"message": "boom", "exception": ValueError("real problem")}
+    h(loop, other)
+    assert seen == [other]                                   # anything else passes through
+    loop.close()

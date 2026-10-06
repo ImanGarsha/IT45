@@ -31,3 +31,12 @@ paper fill fell back to taker. Small sample; the fill split is now visible in Tr
 | Meridian | wss://ws.meridian.xyz/v1/stream | `Ticker` (~1/s, bid/ask/amounts) | `TradeFill` (sd 0 = taker buy) | subscribes by ticker, e.g. BTCUSD |
 Reya executions and Meridian TradeFill frames were not seen live during the probe (quiet BTC
 markets); their parsers follow the docs and are unit-tested on documented shapes.
+
+## Console noise on Windows (fixed 2026-10-06)
+On the PI's Windows / Python 3.13 machine a websocket that failed while opening made asyncio print
+`AttributeError: 'ClientConnection' object has no attribute 'recv_messages'` from inside the
+websockets library (its `connection_lost()` runs before `connection_made()` on a failed TLS
+handshake; still present in websockets 17.2). Harmless: the attempt had already failed and the
+stream retries with backoff. `quiet_websocket_handshake_noise()` drops that one traceback and
+writes one line to the event log at most every 10 minutes; the real reason stays visible under
+Venue health, Live book.

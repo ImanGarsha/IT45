@@ -19,6 +19,32 @@ from dataclasses import dataclass
 
 import httpx
 
+
+def quiet_websocket_handshake_noise(loop: asyncio.AbstractEventLoop, store=None) -> None:
+    """Hide a harmless traceback from the websockets library.
+
+    When a secure websocket connection fails before it is fully open (TLS handshake error or
+    timeout, seen on Windows with Python 3.13), websockets' ClientConnection.connection_lost()
+    touches `recv_messages`, which only exists after connection_made(). asyncio then prints
+    "AttributeError: 'ClientConnection' object has no attribute 'recv_messages'" for every
+    failed attempt. The attempt has already failed and the stream loop retries with backoff, so
+    nothing is lost; the real reason shows under Venue health -> Live book. This filter drops that
+    one traceback (logging one line to the event log at most every 10 minutes) and passes every
+    other loop error through unchanged."""
+    last = [0.0]
+
+    def handler(lp, ctx):
+        exc = ctx.get("exception")
+        if isinstance(exc, AttributeError) and "recv_messages" in str(exc):
+            if store is not None and time.time() - last[0] > 600:
+                last[0] = time.time()
+                store.log("warn", "streams", "a live-book websocket failed while opening; it retries "
+                                             "automatically (see Venue health, Live book, for the reason)")
+            return
+        lp.default_exception_handler(ctx)
+
+    loop.set_exception_handler(handler)
+
 FRESH_S = 5.0
 
 

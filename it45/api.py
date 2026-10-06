@@ -4,6 +4,7 @@ M1 is READ-ONLY by construction: no venue adapter holds a key or has an order me
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -16,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__, opportunities as opp
 from .feed import Feed
 from .store import Settings, Store
-from .streams import StreamHub
+from .streams import StreamHub, quiet_websocket_handshake_noise
 from .trading import persistence as tpers
 from .trading.engine import ConfigError, Engine
 
@@ -47,6 +48,7 @@ def create_app(start_feed: bool = True) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app):
+        quiet_websocket_handshake_noise(asyncio.get_running_loop(), store)
         if start_feed:
             feed.start()
         yield
