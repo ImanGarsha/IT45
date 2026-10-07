@@ -75,6 +75,10 @@ def create_app(start_feed: bool = True) -> FastAPI:
     def streams():
         return hub.status()
 
+    @app.post("/api/connections/reconnect")
+    async def reconnect():
+        return await engine.reconnect()
+
     @app.get("/api/venues")
     def venues():
         return feed.venue_status()

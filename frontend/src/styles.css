@@ -244,3 +244,4 @@ input[type="number"] { width: 110px; text-align: right; font-family: var(--font-
 .offline.bad { border-color: var(--neg); background: rgb(var(--neg-rgb) / .12); }
 .offline.warn { border-color: var(--warn); background: var(--brass-soft); }
 .offline code { font-size: 12.5px; }
+.offline-act { margin-top: 6px; }

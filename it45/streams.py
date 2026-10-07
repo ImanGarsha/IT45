@@ -109,6 +109,21 @@ class VenueStream:
         if symbol:
             self.hub.emit(Trade(self.venue, symbol, float(px), float(sz), taker_buy, ts or time.time()))
 
+    async def restart(self):
+        """Drop the current websocket (or its retry wait) and connect again now."""
+        t, self.task = self.task, None
+        if t is not None:
+            t.cancel()
+            try:
+                await t
+            except BaseException:
+                pass
+        self.ws, self.connected, self.error = None, False, None
+        self.subscribed.clear()
+        self.books.clear()
+        if self.wanted:
+            self.task = asyncio.create_task(self._run())
+
     async def want(self, symbols: set[str]):
         self.wanted = set(symbols)
         if self.task is None and self.wanted:
@@ -358,6 +373,11 @@ class StreamHub:
 
     def status(self) -> list[dict]:
         return [s.status() for s in self.streams.values()]
+
+    async def reconnect(self):
+        """Reconnect every live-book stream now, skipping any backoff wait."""
+        for s in self.streams.values():
+            await s.restart()
 
     async def stop(self):
         for s in self.streams.values():

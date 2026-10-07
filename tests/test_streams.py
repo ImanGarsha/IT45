@@ -156,3 +156,56 @@ def test_websocket_handshake_noise_is_filtered(tmp_path):
     h(loop, other)
     assert seen == [other]                                   # anything else passes through
     loop.close()
+
+
+def test_stream_restart_skips_backoff_and_resubscribes():
+    import asyncio
+    from it45.streams import StreamHub
+
+    class F:
+        quotes = {}
+    hub = StreamHub(F())
+    s = hub.streams["hyperliquid"]
+    starts = []
+
+    async def fake_run():
+        starts.append(1)
+        await asyncio.sleep(3600)          # stands in for a long backoff wait
+    s._run = fake_run
+
+    async def go():
+        await s.want({"BTC"})
+        await asyncio.sleep(0)
+        s.subscribed.add("BTC")
+        old = s.task
+        await hub.reconnect()
+        await asyncio.sleep(0)
+        assert old.cancelled() and s.task is not old and not s.subscribed and len(starts) == 2
+        idle = hub.streams["arcus"]        # nothing wanted there: stays idle
+        assert idle.task is None
+        await hub.stop()
+    asyncio.run(go())
+
+
+def test_feed_reconnect_new_client_clears_backoff_and_polls(tmp_path):
+    import asyncio
+    from it45.feed import Feed
+    from it45.store import Settings, Store
+    f = Feed(Settings(tmp_path / "s.json"), Store(tmp_path / "t.db"))
+    polled = []
+    for n, v in f.venues.items():
+        async def fetch(n=n):
+            polled.append(n)
+            return []
+        v.fetch = fetch
+    import time as _t
+    f.health["arcus"].update(ok=True, last_ok=_t.time())          # healthy: not polled again
+    f.health["reya"]["backoff_until"] = 9e18                      # rate-limited: wait respected
+    old = f.client
+
+    async def go():
+        await f.reconnect()
+        await f.client.aclose()
+    asyncio.run(go())
+    assert f.client is not old and all(v.client is f.client for v in f.venues.values())
+    assert sorted(polled) == sorted(set(f.venues) - {"arcus", "reya"})

@@ -1,5 +1,5 @@
 import { OppResp, usePoll } from "../api";
-import { ago, Dot, PageHead, pct, Stat, Table, bp, Notice } from "../ui";
+import { ago, Dot, PageHead, pct, Stat, Table, bp, Notice, ReconnectButton } from "../ui";
 import type { PageProps } from ".";
 import { oppCols } from "./Opps";
 
@@ -60,7 +60,8 @@ export function Health({ venues }: PageProps) {
   const byV = Object.fromEntries((st.data ?? []).map((s) => [s.venue, s]));
   return (
     <>
-      <PageHead title="Venue health" sub="Each venue is polled on its public API every few seconds. Live websocket books open only for markets the bot is working on: open legs, resting orders and its top candidates." />
+      <PageHead title="Venue health" sub="Each venue is polled on its public API every few seconds. Live websocket books open only for markets the bot is working on: open legs, resting orders and its top candidates."
+        right={<ReconnectButton />} />
       <Table rows={venues} rowKey={(v) => v.name} cols={[
         { key: "label", label: "Venue", render: (v) => <span className="cell-flex"><Dot ok={v.ok} stale={v.stale} /><a href={`#/venues/${v.name}`}>{v.label}</a></span> },
         { key: "state", label: "State", get: (v) => (!v.enabled ? "disabled" : v.ok ? (v.stale ? "stale" : "live") : "down") },

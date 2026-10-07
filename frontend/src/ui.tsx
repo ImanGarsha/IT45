@@ -183,3 +183,37 @@ export function LineChart({ series, height = 220, yFmt }:
     </div>
   );
 }
+
+// ---------- reconnect ----------------------------------------------------------
+const RECONNECT_HELP = "Refresh every connection now without restarting IT45: new connections to all five venues' "
+  + "price feeds with an immediate poll, the live order-book streams, and any testnet connector that failed to start. "
+  + "Positions, pairs, orders and settings are not touched. If the internet itself is down it cannot help; "
+  + "IT45 also retries by itself every few seconds.";
+
+/** "Reconnect now" button plus a one-line result. */
+export function ReconnectButton({ small }: { small?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const go = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch("/api/connections/reconnect", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail ?? r.status);
+      const bad = Object.entries(j as Record<string, { feed: string; connector: string }>)
+        .filter(([, v]) => v.feed !== "ok" || v.connector !== "ok").map(([k]) => k);
+      const label = (v: string) => v[0].toUpperCase() + v.slice(1);
+      setMsg(bad.length === Object.keys(j).length ? "Tried again: no venue answers. Check this computer's internet connection."
+        : bad.length ? `Reconnected. Still not answering: ${bad.map(label).join(", ")}.` : "Reconnected: all venues answering.");
+    } catch (e) {
+      setMsg(`IT45 did not respond (${(e as Error).message}). Is it running?`);
+    } finally { setBusy(false); }
+  };
+  return (
+    <span className="cell-flex">
+      <button type="button" className={small ? "btn-small" : "btn"} disabled={busy} onClick={go} data-help={RECONNECT_HELP}>
+        {busy ? "Reconnecting" : "Reconnect now"}</button>
+      {msg && <span className="small" data-help="Result of the last reconnect: venues that answered, and any that still did not.">{msg}</span>}
+    </span>
+  );
+}

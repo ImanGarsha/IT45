@@ -35,6 +35,23 @@ class Feed:
     def start(self):
         self._task = asyncio.create_task(self._loop())
 
+    async def reconnect(self) -> None:
+        """Fresh HTTP connections, then an immediate poll of every enabled venue that is down or
+        stale. Healthy venues are not polled again (an extra poll right after the regular one can
+        trip a rate limit), and a venue's rate-limit wait (HTTP 429) is respected. Used by the
+        dashboard's Reconnect button."""
+        old, self.client = self.client, httpx.AsyncClient(timeout=12, headers={"User-Agent": "IT45/0.1"})
+        for v in self.venues.values():
+            v.client = self.client
+        try:
+            await old.aclose()
+        except Exception:
+            pass
+        stale_after = 3 * max(1.0, float(self.settings["poll_seconds"]))
+        todo = [n for n in self.venues if n in self.settings["enabled_venues"]
+                and (not self.health[n]["ok"] or self.age(n) > stale_after)]
+        await asyncio.gather(*(self._poll(n) for n in todo))
+
     async def stop(self):
         if self._task:
             self._task.cancel()

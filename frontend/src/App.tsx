@@ -5,7 +5,7 @@ import { Icon } from "./icons";
 import { DEFAULT_ROUTE, findRoute, NAV } from "./nav";
 import { Page } from "./pages";
 import { useTrading } from "./pages/Trading";
-import { Dot } from "./ui";
+import { Dot, ReconnectButton } from "./ui";
 
 function useHashRoute() {
   const read = () => (window.location.hash.replace(/^#\/?/, "") || DEFAULT_ROUTE);
@@ -50,10 +50,12 @@ function OfflineBanner({ serverDown, venues, modes, unknown }:
   if (traded.length && down.length === traded.length) {
     notes.push(<div key="all" className="offline bad" role="alert" data-help="No venue you trade on has answered within the stale limit. Usually the internet connection is down or the computer slept. The guard refuses new orders on stale prices. Brakes, strategy exits and the daily-loss check leave positions alone while a venue is unreachable and for 60 s after it returns, so an outage is never read as a loss or a missing leg.">
       <b>No venue is answering: the internet connection may be down.</b> New orders are paused. Open positions
-      stay open: a disconnection never engages the kill switch or closes anything. Brakes resume 60 s after the connection is back.</div>);
+      stay open: a disconnection never engages the kill switch or closes anything. Brakes resume 60 s after the connection is back.
+      <div className="offline-act"><ReconnectButton small /></div></div>);
   } else if (down.length) {
     notes.push(<div key="some" className="offline warn" data-help="These venues have not answered within the stale limit. No new orders go there until their prices are fresh again; other venues trade normally.">
-      <b>{down.map((v) => v.label).join(", ")} not answering.</b> No new orders there until prices are fresh again; its positions stay open.</div>);
+      <b>{down.map((v) => v.label).join(", ")} not answering.</b> No new orders there until prices are fresh again; its positions stay open.
+      <div className="offline-act"><ReconnectButton small /></div></div>);
   }
   if (unknown > 0) {
     notes.push(<div key="unk" className="offline warn" data-help="Orders that were sent while the connection dropped, so no answer came back. IT45 asks the venue what became of each one once it answers again: a resting order is cancelled, a fill is booked, and the brakes repair any pair.">

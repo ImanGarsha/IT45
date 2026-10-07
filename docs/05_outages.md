@@ -31,6 +31,15 @@ survived 2¼ minutes with no network and a restart, kill switch off, both legs i
 Bulk API outage (HTTP 502) on 2026-10-04 left the pair untouched while the daily-loss brake stayed
 armed. Tests: `tests/test_network_outage.py`.
 
+## Reconnect without restarting (2026-10-06)
+**Reconnect now** (Overview → Venue health, and inside the outage banners) calls
+`POST /api/connections/reconnect` → `Engine.reconnect()`: new HTTP connections for the market feed
+and an immediate poll of every venue that is down or stale (healthy venues are not polled twice,
+and a venue's HTTP 429 wait is respected), every live-book websocket restarted at once instead of
+waiting out its backoff (up to 60 s), and testnet connectors that failed to start rebuilt. Positions,
+pairs, orders, settings and order-error halts are untouched. Returns per venue whether its feed
+answers. IT45 also keeps retrying by itself; the button only skips the waiting.
+
 ## Requests time out after 10 s
 `REQUEST_TIMEOUT_S` in `trading/brokers.py`, used by all testnet connectors (the Hyperliquid SDK
 defaults to no timeout, which could freeze its connector on a dead link).

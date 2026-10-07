@@ -303,6 +303,24 @@ class Engine:
                 return False
         return True
 
+    async def reconnect(self) -> dict:
+        """Refresh every connection without restarting IT45: market feeds (new HTTP connections,
+        immediate poll), live-book websockets, and testnet connectors that failed to start.
+        Positions, pairs, settings and halts caused by order errors are left as they are."""
+        await self.feed.reconnect()
+        if self.hub is not None:
+            await self.hub.reconnect()
+        await self.retry_unavailable(every_s=0)
+        await self.probe_venues()
+        self.store.log("info", "engine", "reconnect requested from the dashboard")
+        stale_s = float(self.cfg()["brakes"]["stale_s"])
+        out = {}
+        for v in self.feed.venues:
+            h = self.feed.health[v]
+            out[v] = {"feed": "ok" if h["ok"] and self.feed.age(v) <= stale_s else (h["error"] or "no data"),
+                      "connector": "unavailable" if isinstance(self.brokers.get(v), Unavailable) else "ok"}
+        return out
+
     async def retry_unavailable(self, every_s: float = 60.0):
         """A testnet connector that failed to start (e.g. IT45 started offline) is retried."""
         if time.time() - self._last_rebuild < every_s:
