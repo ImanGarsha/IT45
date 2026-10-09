@@ -432,6 +432,9 @@ class Engine:
             "halted": self.guard.halted,
             "daily_loss_hit": self.guard.daily_loss_hit,
             "unreachable": self.unreachable,
+            "liq": {"configured": float(c["brakes"]["min_liq_distance"]),
+                    "effective": tcfg.effective_liq_threshold(c),
+                    "entry_distance": tcfg.entry_liq_distance(c["leverage"])},
             "settling": sorted(v for v, m in c["venue_modes"].items()
                                if m != "off" and v not in self.unreachable and not self.settled(v)),
             "unknown_orders": self.db.q("SELECT COUNT(*) n FROM orders WHERE status='unknown'")[0]["n"],

@@ -20,6 +20,7 @@ export type TCfg = {
 export type TStatus = {
   config: TCfg; halted: Record<string, string>; daily_loss_hit: boolean; unknown_orders: number;
   unreachable: Record<string, string>; settling: string[];
+  liq: { configured: number; effective: number; entry_distance: number };
   risk: { day?: string; day_start_equity?: number; equity?: number; pnl_today?: number; limit?: number; paused?: string };
   broker_errors: Record<string, string>; brokers: Record<string, string>;
   strategies: Record<string, { enabled: boolean; note: string; last_eval: number }>;
@@ -398,6 +399,12 @@ export function BrakesPage() {
         <Stat label="Halted venues" value={Object.keys(t.data.halted).length} hint={Object.keys(t.data.halted).map(V).join(", ") || "none"} />
         <Stat label="Daily loss brake" value={t.data.daily_loss_hit ? "Tripped" : r.paused ? "On hold" : "Armed"} hint={r.paused} />
       </div>
+      {t.data.liq.effective < t.data.liq.configured - 1e-9 && (
+        <Notice kind="warn">
+          <span data-help="A new leg starts this far from liquidation at the current leverage. A brake set above that would fire the moment a pair opens and cut it down with taker orders again and again, so IT45 uses half the starting distance instead. Lower the leverage or the brake to remove this note.">
+            <b>Liquidation brake acting at {pct(t.data.liq.effective, 0)}, not {pct(t.data.liq.configured, 0)}.</b>{" "}
+            At {t.data.config.leverage}x a new position starts only {pct(t.data.liq.entry_distance, 0)} from liquidation, so a {pct(t.data.liq.configured, 0)} brake would cut every pair as soon as it opened.</span>
+        </Notice>)}
       {(Object.keys(t.data.unreachable).length > 0 || t.data.settling.length > 0) && (
         <Notice kind="warn">
           <span data-help="While a venue cannot be reached, and for 60 seconds after it comes back, no brake or strategy exit acts on a pair with a leg there. The daily-loss check pauses only while an account balance cannot be read. An outage is never read as a loss or a missing leg, so it can neither engage the kill switch nor close positions.">
@@ -417,7 +424,7 @@ export function BrakesPage() {
         <NumField label="Hedge imbalance tolerance (%)" value={f.imbalance_pct} scale={100} step={1} onChange={set("imbalance_pct")} hint="Long and short notional of a pair may differ by this much." />
         <NumField label="Lone-leg timeout (seconds)" value={f.imbalance_timeout_s} step={5} onChange={set("imbalance_timeout_s")} hint="After this, the heavier leg is trimmed or a lone leg closed." />
         <NumField label="Stale feed after (seconds)" value={f.stale_s} step={5} onChange={set("stale_s")} hint="No new orders on a venue whose prices are older than this." />
-        <NumField label="Reduce when within (%) of liquidation" value={f.min_liq_distance} scale={100} step={5} onChange={set("min_liq_distance")} hint="The pair is halved." />
+        <NumField label="Reduce when within (%) of liquidation" value={f.min_liq_distance} scale={100} step={5} onChange={set("min_liq_distance")} hint={`The pair is halved, then left alone for 10 minutes. At ${f && t.data.config.leverage}x a new leg starts about ${pct(t.data.liq.entry_distance, 0)} from liquidation; keep this well below that.`} />
         <NumField label="Halt a venue after consecutive order errors" value={f.max_api_errors} step={1} min={1} onChange={set("max_api_errors")} />
         <div><button type="submit" className="btn" disabled={a.busy}>Save brakes</button></div>
       </form>

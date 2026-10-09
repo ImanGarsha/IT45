@@ -4,7 +4,9 @@
 2. daily loss              -> flatten everything, engage the kill switch, stop strategies
 3. hedge imbalance         -> a pair whose legs differ by more than imbalance_pct for longer
                               than imbalance_timeout_s is repaired (lone leg: closed)
-4. liquidation distance    -> a leg closer than min_liq_distance to liquidation: pair halved
+4. liquidation distance    -> a leg closer than the effective threshold (min_liq_distance, capped at
+                              half the distance a fresh leg starts at) to liquidation: pair halved,
+                              then left alone for HALVE_COOLDOWN_S
 None of 2-4 acts on a venue that is unreachable or reconnected less than Engine.SETTLE_S ago:
 an outage is never read as a loss, a lone leg or a broken hedge.
 Also retries closing any pair stuck in 'closing'.
@@ -14,6 +16,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
+from . import config as tcfg
 from .executor import Leg
 
 
@@ -23,6 +26,7 @@ class Risk:
         self.day = None
         self.day_start_equity: float | None = None
         self.imbalance_since: dict[str, float] = {}
+        self.halved_at: dict[str, float] = {}
         self.busy = False
         self.state: dict = {}
 
@@ -85,8 +89,11 @@ class Risk:
             await self.e.kill(f"daily loss ${pnl:,.2f} hit the limit ${-limit:,.2f}")
 
     # 3 + 4 -------------------------------------------------------------------
+    HALVE_COOLDOWN_S = 600.0     # after halving a pair, give prices and margin time to move first
+
     async def _pairs(self):
         b = self.e.cfg()["brakes"]
+        liq_thr = tcfg.effective_liq_threshold(self.e.cfg())
         for p in self.e.db.open_pairs():
             if not (self.e.settled(p["long_venue"]) and self.e.settled(p["short_venue"])):
                 # positions on an unreachable venue are unknown, not gone: leave the pair alone and
@@ -115,9 +122,11 @@ class Risk:
             else:
                 self.imbalance_since.pop(p["id"], None)
             for leg in (lp, sp):
-                if leg and leg.liq_distance is not None and leg.liq_distance < float(b["min_liq_distance"]):
+                if leg and leg.liq_distance is not None and leg.liq_distance < liq_thr \
+                        and time.time() - self.halved_at.get(p["id"], 0.0) > self.HALVE_COOLDOWN_S:
                     self.e.db.audit("liq_brake", leg.venue, leg.symbol, False,
                                     {"pair": p["id"], "distance": leg.liq_distance})
+                    self.halved_at[p["id"]] = time.time()
                     await self._halve(p, lp, sp)
                     break
 

@@ -72,6 +72,21 @@ DEFAULTS: dict = {
 }
 
 
+TYPICAL_MMR = 0.025      # maintenance margin of a 20x-max market; most IT45 markets are 20-50x
+
+
+def entry_liq_distance(leverage: float, mmr: float = TYPICAL_MMR) -> float:
+    """How far (as a fraction of price) a NEW isolated leg starts from its liquidation price."""
+    return max(0.0, 1.0 / float(leverage) - mmr)
+
+
+def effective_liq_threshold(cfg: dict) -> float:
+    """The liquidation brake fires below this distance. Never more than half of where a fresh leg
+    starts: otherwise the brake fires the moment a pair opens and halves it again on every pass,
+    paying taker fees each time (seen in the PI's paper run at 8x leverage with a 20 % brake)."""
+    return min(float(cfg["brakes"]["min_liq_distance"]), 0.5 * entry_liq_distance(cfg["leverage"]))
+
+
 def merged(stored: dict | None) -> dict:
     """Defaults overlaid with whatever is stored (stored keys win, unknown keys dropped)."""
     def deep(base, over):
@@ -101,6 +116,14 @@ def validate(cfg: dict) -> list[str]:
         errs.append("brakes.daily_loss_pct must be in (0, 0.5]")
     if not 0 < float(b["min_liq_distance"]) < 1:
         errs.append("brakes.min_liq_distance must be in (0, 1)")
+    elif 1.0 <= float(cfg["leverage"]) <= MAX_LEVERAGE:
+        start = entry_liq_distance(cfg["leverage"])
+        if float(b["min_liq_distance"]) >= start:
+            ok_lev = int(1.0 / (float(b["min_liq_distance"]) + TYPICAL_MMR))
+            errs.append(f"At {float(cfg['leverage']):g}x a new position starts only about {start:.0%} from "
+                        f"liquidation, inside the {float(b['min_liq_distance']):.0%} liquidation brake: every pair "
+                        f"would be cut down by taker orders as soon as it opens. Use at most {ok_lev}x with this "
+                        f"brake, or set the brake below {start:.0%} (about {start / 2:.0%} is sensible).")
     for name, s in cfg["strategies"].items():
         if float(s["exit_edge_apr"]) >= float(s["entry_edge_apr"]):
             errs.append(f"{name}: exit threshold must be below entry threshold")

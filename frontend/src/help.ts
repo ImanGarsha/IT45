@@ -199,7 +199,7 @@ const RAW: Record<string, string> = {
   "per venue, gross (usd)": "Total open notional allowed on one venue, longs and shorts added together.",
   "whole book, gross (usd)": "Total open notional across all venues.",
   "open pairs at once": "Maximum pairs open at the same time across both strategies.",
-  "leverage per leg": "Up to 10x. Funding arbitrage earns nothing extra from leverage; it only moves liquidation closer.",
+  "leverage per leg": "Up to 10x. Funding arbitrage earns nothing extra from leverage; it only moves liquidation closer: a new leg starts about 1/leverage minus 2.5 % from liquidation (2x: 47 %, 4x: 22 %, 8x: 10 %). Settings that put a fresh leg inside the liquidation brake are refused.",
   "paper starting balance per venue (usd)": "Play money each venue's paper account starts with (applies on reset).",
   "execution": "How orders are worked: maker first, then cross the spread.",
   "post-only attempts before crossing": "How many times a leg is posted at the best price and re-priced before it goes to a market order.",
@@ -220,7 +220,7 @@ const RAW: Record<string, string> = {
   "hedge imbalance tolerance (%)": "How far long and short notional of a pair may differ before it is repaired.",
   "lone-leg timeout (seconds)": "How long a pair may stay unbalanced before the heavier leg is trimmed or a lone leg closed.",
   "stale feed after (seconds)": "A venue whose prices are older than this gets no new orders until they refresh.",
-  "reduce when within (%) of liquidation": "If a leg gets this close to its liquidation price, the pair is halved.",
+  "reduce when within (%) of liquidation": "If a leg gets this close to its liquidation price, the pair is halved once, then left alone for 10 minutes. Must sit well below where a new leg starts (see Leverage); IT45 never uses more than half of that distance.",
   "halt a venue after consecutive order errors": "Stop sending new orders to a venue after this many order errors in a row. Resume it here once fixed.",
   "save brakes": "Save the brake settings. They apply from the next cycle.",
 

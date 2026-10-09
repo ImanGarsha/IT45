@@ -401,3 +401,32 @@ def test_ticket_market_is_streamed_while_watched(eng):
     assert "ETH" in e.wanted_streams().get("bulk", set())
     e.manual.watching[("bulk", "ETH", "perp")] -= 60      # page closed a minute ago
     assert "ETH" not in e.wanted_streams().get("bulk", set())
+
+
+def test_high_leverage_no_longer_shreds_pairs(eng):
+    """PI's paper run: 8x leverage with the default 20 % liquidation brake halved every pair the
+    moment it opened, and again on every pass, paying taker fees each time."""
+    e, feed, store = eng
+    with pytest.raises(ConfigError, match="inside the 20% liquidation brake"):
+        e.update_cfg({"leverage": 8})
+    # a stored settings file can still hold the old combination: the brake caps itself
+    c = e.cfg()
+    c["leverage"] = 8
+    e.settings.update({"trading": c})
+    assert tcfg.effective_liq_threshold(e.cfg()) == pytest.approx(0.05)
+    feed.set("bulk", "BTC", 100.0)
+    feed.set("reya", "BTC", 100.0)
+    run(e.executor.ioc(Leg("bulk", "BTC", "perp", "buy", 2.0), None))
+    run(e.executor.ioc(Leg("reya", "BTC", "perp", "sell", 2.0), None))
+    e.db.insert_pair({"id": "p8", "strategy": "funding_arb", "symbol": "BTC", "long_venue": "bulk",
+                      "long_kind": "perp", "short_venue": "reya", "short_kind": "perp", "target_usd": 200,
+                      "status": "open", "opened_ts": 0, "entry_edge_apr": 0.3, "entry_basis_bp": 0.0, "notes": ""})
+    for _ in range(5):
+        run(e.risk.run())
+    assert run(e.position("bulk", "BTC", "perp")).size == pytest.approx(2.0)   # untouched at entry
+    # a real move toward liquidation (long leg: price falls ~6 %, inside 5 % of its liquidation) halves once
+    feed.set("bulk", "BTC", 93.5)
+    feed.set("reya", "BTC", 93.5)
+    for _ in range(5):
+        run(e.risk.run())
+    assert run(e.position("bulk", "BTC", "perp")).size == pytest.approx(1.0)   # once, then cooldown
