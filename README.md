@@ -23,7 +23,9 @@ cd "D:\PROJECTS\INTELLIGENT TRADER\IT45"
 .\run.ps1
 ```
 
-First run creates `.venv` and installs; then the dashboard opens at http://127.0.0.1:8045.
+First run creates `.venv` and installs; later starts skip the install unless the dependency list
+(`pyproject.toml`) changed, so they take seconds. `.\run.ps1 --reinstall` forces it. The dashboard
+opens at http://127.0.0.1:8045.
 `.\run.ps1 --no-browser` or `--port 9000` also work. Stop with Ctrl+C.
 
 If PowerShell refuses to run scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
